@@ -27,9 +27,9 @@ function authenticate(req, res, next) {
   } catch { return res.status(401).json({ error: 'Invalid or expired token' }); }
 }
 
-function logAudit(req, entityType, entityId, action, changes = {}) {
+async function logAudit(req, entityType, entityId, action, changes = {}) {
   try {
-    execute('INSERT INTO audit_log (user_id, entity_type, entity_id, action, changes, ip_address) VALUES (?, ?, ?, ?, ?, ?)',
+    await execute('INSERT INTO audit_log (user_id, entity_type, entity_id, action, changes, ip_address) VALUES ($1, $2, $3, $4, $5, $6)',
       [req.user?.userId || null, entityType, entityId, action, JSON.stringify(changes), req.ip || 'unknown']);
   } catch (e) { console.error('Audit error:', e.message); }
 }
@@ -52,8 +52,11 @@ function similarity(a, b) {
   return max === 0 ? 1 : 1 - levenshtein(al, bl) / max;
 }
 
-function findDuplicates(shopName, city, threshold = 0.85, excludeId) {
-  const all = queryAll('SELECT * FROM accounts WHERE deleted_at IS NULL' + (excludeId ? ' AND id != ?' : ''), excludeId ? [excludeId] : []);
+async function findDuplicates(shopName, city, threshold = 0.85, excludeId) {
+  let sql = 'SELECT * FROM accounts WHERE deleted_at IS NULL';
+  const params = [];
+  if (excludeId) { sql += ' AND id != $1'; params.push(excludeId); }
+  const all = await queryAll(sql, params);
   const matches = [];
   for (const a of all) {
     let score = similarity(shopName, a.shop_name);
@@ -64,53 +67,51 @@ function findDuplicates(shopName, city, threshold = 0.85, excludeId) {
 }
 
 async function autoSeed() {
-  // Auto-seed if database is empty (first deploy)
-  const count = queryOne('SELECT COUNT(*) as count FROM users');
-  if (!count || count.count === 0) {
+  const count = await queryOne('SELECT COUNT(*) as count FROM users');
+  if (!count || parseInt(count.count) === 0) {
     console.log('Empty database detected — running auto-seed...');
-    const bcryptSeed = require('bcryptjs');
     const seedData = require('./src/db/seed-data.json');
 
-    const adminHash = await bcryptSeed.hash('admin123', 12);
-    const repHash = await bcryptSeed.hash('rep123', 12);
+    const adminHash = await bcrypt.hash('admin123', 12);
+    const repHash = await bcrypt.hash('rep123', 12);
 
-    execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES (?,?,?,?,?)',
+    await execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5)',
       ['adam@chcpaint.com', adminHash, 'Adam', 'Berube', 'admin']);
-    const { lastId: michelleId } = execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES (?,?,?,?,?)',
+    const { lastId: michelleId } = await execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5)',
       ['michelle@chcpaint.com', repHash, 'Michelle', 'Rep', 'rep']);
-    const { lastId: benId } = execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES (?,?,?,?,?)',
+    const { lastId: benId } = await execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5)',
       ['ben@chcpaint.com', repHash, 'Ben', 'Halliday', 'rep']);
 
     let total = 0;
     for (const row of (seedData['Michelles Accounts'] || [])) {
       if (!row['Shop Name']) continue;
-      const { lastId } = execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,former_sherwin_client,tags) VALUES (?,?,?,?,?,?)',
-        [row['Shop Name'], row['City/Area']||null, michelleId, 'prospect', row['Former Sherwin Client? Y/N']==='Y'?1:0, '[]']);
-      if (row['Notes']) execute('INSERT INTO notes (account_id,created_by_id,content) VALUES (?,?,?)', [lastId, michelleId, '[Imported] '+row['Notes']]);
+      const { lastId } = await execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,former_sherwin_client,tags) VALUES ($1,$2,$3,$4,$5,$6)',
+        [row['Shop Name'], row['City/Area']||null, michelleId, 'prospect', row['Former Sherwin Client? Y/N']==='Y', '[]']);
+      if (row['Notes']) await execute('INSERT INTO notes (account_id,created_by_id,content) VALUES ($1,$2,$3)', [lastId, michelleId, '[Imported] '+row['Notes']]);
       total++;
     }
     for (const row of (seedData['Bens Accounts'] || [])) {
       if (!row['Shop Name']) continue;
-      execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,tags) VALUES (?,?,?,\'prospect\',\'[]\')', [row['Shop Name'], row['City/Area']||null, benId]);
+      await execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,tags) VALUES ($1,$2,$3,$4,$5)', [row['Shop Name'], row['City/Area']||null, benId, 'prospect', '[]']);
       total++;
     }
     for (const row of (seedData['Joint Accounts'] || [])) {
       if (!row['Shop Name']) continue;
-      execute('INSERT INTO accounts (shop_name,address,city,contact_names,suppliers,paint_line,sundries,has_contract,mpo,num_techs,sq_footage,status,tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,\'active\',\'[]\')',
-        [row['Shop Name'],row['Address']||null,row['City/Area']||null,row['Contact(s)']||null,row['Supplier(s)']||null,row['Paint']||null,row['Sundries']||null,row['Contract? Y/N']==='Y'?1:0,row['MPO']||null,row['# of Techs']||null,row['Shop Sq. Footage']||null]);
+      await execute('INSERT INTO accounts (shop_name,address,city,contact_names,suppliers,paint_line,sundries,has_contract,mpo,num_techs,sq_footage,status,tags) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
+        [row['Shop Name'],row['Address']||null,row['City/Area']||null,row['Contact(s)']||null,row['Supplier(s)']||null,row['Paint']||null,row['Sundries']||null,row['Contract? Y/N']==='Y',row['MPO']||null,row['# of Techs']?parseInt(row['# of Techs']):null,row['Shop Sq. Footage']||null,'active','[]']);
       total++;
     }
     for (const row of (seedData['Cold'] || [])) {
       if (!row['Shop Name']) continue;
-      const { lastId } = execute('INSERT INTO accounts (shop_name,address,city,status,tags) VALUES (?,?,?,\'cold\',\'[]\')', [row['Shop Name'],row['Address']||null,row['City']||null]);
-      if (row['Reason']) execute('INSERT INTO notes (account_id,created_by_id,content) VALUES (?,?,?)', [lastId, benId, '[Cold - Reason] '+row['Reason']]);
+      const { lastId } = await execute('INSERT INTO accounts (shop_name,address,city,status,tags) VALUES ($1,$2,$3,$4,$5)', [row['Shop Name'],row['Address']||null,row['City']||null,'cold','[]']);
+      if (row['Reason']) await execute('INSERT INTO notes (account_id,created_by_id,content) VALUES ($1,$2,$3)', [lastId, benId, '[Cold - Reason] '+row['Reason']]);
       total++;
     }
     for (const row of (seedData['DNC Request'] || [])) {
       if (!row['Shop Name']) continue;
       const rep = (row['Rep Pursuing']||'').toLowerCase().includes('michelle') ? michelleId : benId;
-      const { lastId } = execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,tags) VALUES (?,?,?,\'dnc\',\'[]\')', [row['Shop Name'],row['City/Area']||null,rep]);
-      if (row['Notes']) execute('INSERT INTO notes (account_id,created_by_id,content) VALUES (?,?,?)', [lastId, rep, '[DNC - Reason] '+row['Notes']]);
+      const { lastId } = await execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,tags) VALUES ($1,$2,$3,$4,$5)', [row['Shop Name'],row['City/Area']||null,rep,'dnc','[]']);
+      if (row['Notes']) await execute('INSERT INTO notes (account_id,created_by_id,content) VALUES ($1,$2,$3)', [lastId, rep, '[DNC - Reason] '+row['Notes']]);
       total++;
     }
     console.log(`Auto-seed complete: 3 users, ${total} accounts imported`);
@@ -124,7 +125,6 @@ async function startServer() {
 
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
   app.use(compression());
-  // In production, allow same-origin (frontend served from same server)
   const corsOrigin = process.env.NODE_ENV === 'production'
     ? (process.env.CORS_ORIGIN || true)
     : 'http://localhost:5173';
@@ -140,9 +140,9 @@ async function startServer() {
     try {
       const { email, password, first_name, last_name, role } = req.body;
       if (!email || !password || !first_name || !last_name) return res.status(400).json({ error: 'All fields required' });
-      if (queryOne('SELECT id FROM users WHERE email = ?', [email])) return res.status(409).json({ error: 'Email exists' });
+      if (await queryOne('SELECT id FROM users WHERE email = $1', [email])) return res.status(409).json({ error: 'Email exists' });
       const hash = await bcrypt.hash(password, 12);
-      const { lastId } = execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES (?,?,?,?,?)',
+      const { lastId } = await execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5)',
         [email, hash, first_name, last_name, role || 'rep']);
       res.status(201).json({ token: generateToken({ userId: lastId, email, role: role || 'rep' }),
         user: { id: lastId, email, first_name, last_name, role: role || 'rep' } });
@@ -152,191 +152,194 @@ async function startServer() {
   app.post('/api/auth/login', async (req, res) => {
     try {
       const { email, password } = req.body;
-      const user = queryOne('SELECT * FROM users WHERE email = ? AND is_active = 1', [email]);
+      const user = await queryOne('SELECT * FROM users WHERE email = $1 AND is_active = true', [email]);
       if (!user || !(await bcrypt.compare(password, user.password_hash)))
         return res.status(401).json({ error: 'Invalid credentials' });
-      execute('UPDATE users SET last_login = datetime("now") WHERE id = ?', [user.id]);
-      logAudit(req, 'user', user.id, 'login', {});
+      await execute('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
+      await logAudit(req, 'user', user.id, 'login', {});
       res.json({ token: generateToken({ userId: user.id, email: user.email, role: user.role }),
         user: { id: user.id, email: user.email, first_name: user.first_name, last_name: user.last_name, role: user.role } });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.get('/api/auth/me', authenticate, (req, res) => {
-    const u = queryOne('SELECT id,email,first_name,last_name,role FROM users WHERE id=?', [req.user.userId]);
+  app.get('/api/auth/me', authenticate, async (req, res) => {
+    const u = await queryOne('SELECT id,email,first_name,last_name,role FROM users WHERE id=$1', [req.user.userId]);
     res.json({ user: u });
   });
 
-  app.get('/api/auth/users', authenticate, (req, res) => {
-    res.json({ users: queryAll('SELECT id,email,first_name,last_name,role,is_active,last_login,created_at FROM users ORDER BY first_name') });
+  app.get('/api/auth/users', authenticate, async (req, res) => {
+    res.json({ users: await queryAll('SELECT id,email,first_name,last_name,role,is_active,last_login,created_at FROM users ORDER BY first_name') });
   });
 
   // ─── ACCOUNTS ROUTES ───
-  app.get('/api/accounts', authenticate, (req, res) => {
+  app.get('/api/accounts', authenticate, async (req, res) => {
     try {
       const { status, assigned_rep_id, city, search, page = '1', limit = '50' } = req.query;
       const pg = parseInt(page); const lim = parseInt(limit); const off = (pg-1)*lim;
-      let where = ['a.deleted_at IS NULL']; let params = [];
-      if (status) { where.push('a.status = ?'); params.push(status); }
-      if (assigned_rep_id) { where.push('a.assigned_rep_id = ?'); params.push(assigned_rep_id); }
-      if (city) { where.push('a.city LIKE ?'); params.push(`%${city}%`); }
+      let where = ['a.deleted_at IS NULL']; let params = []; let idx = 1;
+      if (status) { where.push(`a.status = $${idx++}`); params.push(status); }
+      if (assigned_rep_id) { where.push(`a.assigned_rep_id = $${idx++}`); params.push(assigned_rep_id); }
+      if (city) { where.push(`a.city ILIKE $${idx++}`); params.push(`%${city}%`); }
       if (search) {
-        where.push('(a.shop_name LIKE ? OR a.contact_names LIKE ? OR a.city LIKE ? OR a.email LIKE ? OR a.phone LIKE ?)');
-        const s = `%${search}%`; params.push(s,s,s,s,s);
+        where.push(`(a.shop_name ILIKE $${idx} OR a.contact_names ILIKE $${idx+1} OR a.city ILIKE $${idx+2} OR a.email ILIKE $${idx+3} OR a.phone ILIKE $${idx+4})`);
+        const s = `%${search}%`; params.push(s,s,s,s,s); idx += 5;
       }
       const w = 'WHERE ' + where.join(' AND ');
-      const total = queryOne(`SELECT COUNT(*) as total FROM accounts a ${w}`, params);
-      const accounts = queryAll(
-        `SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id ${w} ORDER BY a.shop_name LIMIT ? OFFSET ?`,
+      const total = await queryOne(`SELECT COUNT(*) as total FROM accounts a ${w}`, params);
+      const accounts = await queryAll(
+        `SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id ${w} ORDER BY a.shop_name LIMIT $${idx++} OFFSET $${idx++}`,
         [...params, lim, off]);
-      res.json({ accounts, pagination: { page: pg, limit: lim, total: total?.total || 0, totalPages: Math.ceil((total?.total||0)/lim) } });
+      res.json({ accounts, pagination: { page: pg, limit: lim, total: parseInt(total?.total) || 0, totalPages: Math.ceil((parseInt(total?.total)||0)/lim) } });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.get('/api/accounts/export/csv', authenticate, (req, res) => {
-    const accounts = queryAll('SELECT a.*, u.first_name as rfn, u.last_name as rln FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.deleted_at IS NULL ORDER BY a.shop_name');
+  app.get('/api/accounts/export/csv', authenticate, async (req, res) => {
+    const accounts = await queryAll('SELECT a.*, u.first_name as rfn, u.last_name as rln FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.deleted_at IS NULL ORDER BY a.shop_name');
     const hdr = 'Shop Name,City,Contact,Phone,Email,Status,Rep\n';
     const rows = accounts.map(a => `"${a.shop_name}","${a.city||''}","${a.contact_names||''}","${a.phone||''}","${a.email||''}","${a.status}","${a.rfn||''} ${a.rln||''}"`).join('\n');
     res.setHeader('Content-Type','text/csv'); res.setHeader('Content-Disposition','attachment; filename=accounts.csv');
     res.send(hdr + rows);
   });
 
-  app.get('/api/accounts/:id', authenticate, (req, res) => {
+  app.get('/api/accounts/:id', authenticate, async (req, res) => {
     try {
-      const account = queryOne('SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.id=? AND a.deleted_at IS NULL', [req.params.id]);
+      const account = await queryOne('SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.id=$1 AND a.deleted_at IS NULL', [req.params.id]);
       if (!account) return res.status(404).json({ error: 'Not found' });
-      const notes = queryAll('SELECT n.*, u.first_name, u.last_name FROM notes n JOIN users u ON n.created_by_id=u.id WHERE n.account_id=? ORDER BY n.created_at DESC', [req.params.id]);
-      const activities = queryAll('SELECT act.*, u.first_name, u.last_name FROM activities act JOIN users u ON act.rep_id=u.id WHERE act.account_id=? ORDER BY act.created_at DESC LIMIT 20', [req.params.id]);
+      const notes = await queryAll('SELECT n.*, u.first_name, u.last_name FROM notes n JOIN users u ON n.created_by_id=u.id WHERE n.account_id=$1 ORDER BY n.created_at DESC', [req.params.id]);
+      const activities = await queryAll('SELECT act.*, u.first_name, u.last_name FROM activities act JOIN users u ON act.rep_id=u.id WHERE act.account_id=$1 ORDER BY act.created_at DESC LIMIT 20', [req.params.id]);
       res.json({ account, notes, activities });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.post('/api/accounts/check-duplicate', authenticate, (req, res) => {
-    const dupes = findDuplicates(req.body.shop_name, req.body.city, 0.80, req.body.exclude_id);
+  app.post('/api/accounts/check-duplicate', authenticate, async (req, res) => {
+    const dupes = await findDuplicates(req.body.shop_name, req.body.city, 0.80, req.body.exclude_id);
     res.json({ hasDuplicates: dupes.length > 0, duplicates: dupes.map(d => ({
       id: d.account.id, shop_name: d.account.shop_name, city: d.account.city, status: d.account.status, score: d.score
     }))});
   });
 
-  app.post('/api/accounts', authenticate, (req, res) => {
+  app.post('/api/accounts', authenticate, async (req, res) => {
     try {
       const b = req.body;
       if (!b.shop_name) return res.status(400).json({ error: 'shop_name required' });
       if (!b.skip_duplicate_check) {
-        const dupes = findDuplicates(b.shop_name, b.city);
+        const dupes = await findDuplicates(b.shop_name, b.city);
         if (dupes.length > 0) return res.status(409).json({ error: 'Potential duplicate', duplicates: dupes.map(d => ({
           id: d.account.id, shop_name: d.account.shop_name, city: d.account.city, status: d.account.status, score: d.score }))});
       }
-      const { lastId } = execute(
-        `INSERT INTO accounts (shop_name,address,city,area,province,contact_names,phone,email,account_type,assigned_rep_id,status,suppliers,paint_line,allied_products,sundries,has_contract,mpo,num_techs,sq_footage,annual_revenue,former_sherwin_client,follow_up_date,tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [b.shop_name,b.address||null,b.city||null,b.area||null,b.province||'ON',b.contact_names||null,b.phone||null,b.email||null,b.account_type||'collision',b.assigned_rep_id||null,b.status||'prospect',b.suppliers||null,b.paint_line||null,b.allied_products||null,b.sundries||null,b.has_contract?1:0,b.mpo||null,b.num_techs||null,b.sq_footage||null,b.annual_revenue||null,b.former_sherwin_client?1:0,b.follow_up_date||null,JSON.stringify(b.tags||[])]);
-      logAudit(req, 'account', lastId, 'create', { shop_name: b.shop_name });
-      res.status(201).json({ account: queryOne('SELECT * FROM accounts WHERE id=?', [lastId]) });
+      const { lastId } = await execute(
+        `INSERT INTO accounts (shop_name,address,city,area,province,contact_names,phone,email,account_type,assigned_rep_id,status,suppliers,paint_line,allied_products,sundries,has_contract,mpo,num_techs,sq_footage,annual_revenue,former_sherwin_client,follow_up_date,tags) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+        [b.shop_name,b.address||null,b.city||null,b.area||null,b.province||'ON',b.contact_names||null,b.phone||null,b.email||null,b.account_type||'collision',b.assigned_rep_id||null,b.status||'prospect',b.suppliers||null,b.paint_line||null,b.allied_products||null,b.sundries||null,b.has_contract?true:false,b.mpo||null,b.num_techs||null,b.sq_footage||null,b.annual_revenue||null,b.former_sherwin_client?true:false,b.follow_up_date||null,JSON.stringify(b.tags||[])]);
+      await logAudit(req, 'account', lastId, 'create', { shop_name: b.shop_name });
+      res.status(201).json({ account: await queryOne('SELECT * FROM accounts WHERE id=$1', [lastId]) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.put('/api/accounts/:id', authenticate, (req, res) => {
+  app.put('/api/accounts/:id', authenticate, async (req, res) => {
     try {
-      const existing = queryOne('SELECT * FROM accounts WHERE id=? AND deleted_at IS NULL', [req.params.id]);
+      const existing = await queryOne('SELECT * FROM accounts WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!existing) return res.status(404).json({ error: 'Not found' });
       const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags'];
-      const updates = ['updated_at = datetime("now")']; const params = []; const changes = {};
+      const updates = ['updated_at = NOW()']; const params = []; const changes = {};
+      let idx = 1;
       for (const f of fields) {
         if (req.body[f] !== undefined) {
           let v = req.body[f];
           if (f === 'tags' && Array.isArray(v)) v = JSON.stringify(v);
-          if (f === 'has_contract' || f === 'former_sherwin_client') v = v ? 1 : 0;
-          updates.push(`${f} = ?`); params.push(v); changes[f] = { from: existing[f], to: v };
+          if (f === 'has_contract' || f === 'former_sherwin_client') v = v ? true : false;
+          updates.push(`${f} = $${idx++}`); params.push(v); changes[f] = { from: existing[f], to: v };
         }
       }
       params.push(req.params.id);
-      execute(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`, params);
-      logAudit(req, 'account', parseInt(req.params.id), 'update', changes);
-      res.json({ account: queryOne('SELECT * FROM accounts WHERE id=?', [req.params.id]) });
+      await execute(`UPDATE accounts SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+      await logAudit(req, 'account', parseInt(req.params.id), 'update', changes);
+      res.json({ account: await queryOne('SELECT * FROM accounts WHERE id=$1', [req.params.id]) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.delete('/api/accounts/:id', authenticate, (req, res) => {
-    execute('UPDATE accounts SET deleted_at = datetime("now") WHERE id = ?', [req.params.id]);
-    logAudit(req, 'account', parseInt(req.params.id), 'delete', {});
+  app.delete('/api/accounts/:id', authenticate, async (req, res) => {
+    await execute('UPDATE accounts SET deleted_at = NOW() WHERE id = $1', [req.params.id]);
+    await logAudit(req, 'account', parseInt(req.params.id), 'delete', {});
     res.json({ message: 'Deleted' });
   });
 
-  app.post('/api/accounts/import', authenticate, (req, res) => {
+  app.post('/api/accounts/import', authenticate, async (req, res) => {
     try {
       const { accounts: data, skip_duplicates } = req.body;
       if (!Array.isArray(data)) return res.status(400).json({ error: 'accounts array required' });
       let imported = 0, skipped = 0, dupesList = [];
       for (const r of data) {
         if (!r.shop_name) { skipped++; continue; }
-        const dupes = findDuplicates(r.shop_name, r.city, 0.85);
+        const dupes = await findDuplicates(r.shop_name, r.city, 0.85);
         if (dupes.length > 0 && !skip_duplicates) { dupesList.push({ shop_name: r.shop_name, matchedWith: dupes[0].account.shop_name }); skipped++; continue; }
-        execute(`INSERT INTO accounts (shop_name,address,city,contact_names,phone,email,status,tags) VALUES (?,?,?,?,?,?,?,?)`,
+        await execute('INSERT INTO accounts (shop_name,address,city,contact_names,phone,email,status,tags) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
           [r.shop_name,r.address||null,r.city||null,r.contact_names||null,r.phone||null,r.email||null,r.status||'prospect','[]']);
         imported++;
       }
-      logAudit(req, 'account', null, 'import', { imported, skipped });
+      await logAudit(req, 'account', null, 'import', { imported, skipped });
       res.json({ imported, skipped, duplicates: dupesList, total: data.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ─── NOTES ROUTES ───
-  app.get('/api/accounts/:id/notes', authenticate, (req, res) => {
-    res.json({ notes: queryAll('SELECT n.*, u.first_name, u.last_name FROM notes n JOIN users u ON n.created_by_id=u.id WHERE n.account_id=? ORDER BY n.created_at DESC', [req.params.id]) });
+  app.get('/api/accounts/:id/notes', authenticate, async (req, res) => {
+    res.json({ notes: await queryAll('SELECT n.*, u.first_name, u.last_name FROM notes n JOIN users u ON n.created_by_id=u.id WHERE n.account_id=$1 ORDER BY n.created_at DESC', [req.params.id]) });
   });
 
-  app.post('/api/accounts/:id/notes', authenticate, (req, res) => {
+  app.post('/api/accounts/:id/notes', authenticate, async (req, res) => {
     try {
       if (!req.body.content?.trim()) return res.status(400).json({ error: 'Content required' });
-      const { lastId } = execute('INSERT INTO notes (account_id, created_by_id, content, is_voice_transcribed) VALUES (?,?,?,?)',
-        [req.params.id, req.user.userId, req.body.content.trim(), req.body.is_voice_transcribed ? 1 : 0]);
-      execute('UPDATE accounts SET last_contacted_at=datetime("now"), updated_at=datetime("now") WHERE id=?', [req.params.id]);
-      logAudit(req, 'note', lastId, 'create', { account_id: req.params.id });
-      res.status(201).json({ note: queryOne('SELECT n.*, u.first_name, u.last_name FROM notes n JOIN users u ON n.created_by_id=u.id WHERE n.id=?', [lastId]) });
+      const { lastId } = await execute('INSERT INTO notes (account_id, created_by_id, content, is_voice_transcribed) VALUES ($1,$2,$3,$4)',
+        [req.params.id, req.user.userId, req.body.content.trim(), req.body.is_voice_transcribed ? true : false]);
+      await execute('UPDATE accounts SET last_contacted_at=NOW(), updated_at=NOW() WHERE id=$1', [req.params.id]);
+      await logAudit(req, 'note', lastId, 'create', { account_id: req.params.id });
+      res.status(201).json({ note: await queryOne('SELECT n.*, u.first_name, u.last_name FROM notes n JOIN users u ON n.created_by_id=u.id WHERE n.id=$1', [lastId]) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ─── ACTIVITIES ROUTES ───
-  app.post('/api/accounts/:id/activities', authenticate, (req, res) => {
+  app.post('/api/accounts/:id/activities', authenticate, async (req, res) => {
     try {
-      const { lastId } = execute('INSERT INTO activities (account_id, rep_id, activity_type, description, completed_date) VALUES (?,?,?,?,datetime("now"))',
+      const { lastId } = await execute('INSERT INTO activities (account_id, rep_id, activity_type, description, completed_date) VALUES ($1,$2,$3,$4,NOW())',
         [req.params.id, req.user.userId, req.body.activity_type, req.body.description || null]);
-      execute('UPDATE accounts SET last_contacted_at=datetime("now"), updated_at=datetime("now") WHERE id=?', [req.params.id]);
-      logAudit(req, 'activity', lastId, 'create', { account_id: req.params.id });
-      res.status(201).json({ activity: queryOne('SELECT act.*, u.first_name, u.last_name FROM activities act JOIN users u ON act.rep_id=u.id WHERE act.id=?', [lastId]) });
+      await execute('UPDATE accounts SET last_contacted_at=NOW(), updated_at=NOW() WHERE id=$1', [req.params.id]);
+      await logAudit(req, 'activity', lastId, 'create', { account_id: req.params.id });
+      res.status(201).json({ activity: await queryOne('SELECT act.*, u.first_name, u.last_name FROM activities act JOIN users u ON act.rep_id=u.id WHERE act.id=$1', [lastId]) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.get('/api/activities/reminders', authenticate, (req, res) => {
+  app.get('/api/activities/reminders', authenticate, async (req, res) => {
     const days = parseInt(req.query.days) || 14;
-    const repFilter = req.user.role === 'rep' ? 'AND a.assigned_rep_id = ?' : '';
-    const params = [days]; if (req.user.role === 'rep') params.push(req.user.userId);
-    res.json({ dormant: queryAll(
-      `SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.deleted_at IS NULL AND a.status IN ('prospect','active') AND (a.last_contacted_at IS NULL OR a.last_contacted_at < datetime('now', '-' || ? || ' days')) ${repFilter} ORDER BY a.last_contacted_at ASC LIMIT 50`, params) });
+    const isRep = req.user.role === 'rep';
+    let sql = `SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.deleted_at IS NULL AND a.status IN ('prospect','active') AND (a.last_contacted_at IS NULL OR a.last_contacted_at < NOW() - ($1 || ' days')::INTERVAL)`;
+    const params = [days];
+    if (isRep) { sql += ' AND a.assigned_rep_id = $2'; params.push(req.user.userId); }
+    sql += ' ORDER BY a.last_contacted_at ASC NULLS FIRST LIMIT 50';
+    res.json({ dormant: await queryAll(sql, params) });
   });
 
   // ─── SALES ROUTES ───
-  app.get('/api/sales', authenticate, (req, res) => {
+  app.get('/api/sales', authenticate, async (req, res) => {
     try {
       const { month, rep_id, account_id, page = '1', limit = '50' } = req.query;
-      let where = []; let params = [];
-      if (month) { where.push('s.month=?'); params.push(month); }
-      if (rep_id) { where.push('s.rep_id=?'); params.push(rep_id); }
-      if (account_id) { where.push('s.account_id=?'); params.push(account_id); }
+      let where = []; let params = []; let idx = 1;
+      if (month) { where.push(`s.month=$${idx++}`); params.push(month); }
+      if (rep_id) { where.push(`s.rep_id=$${idx++}`); params.push(rep_id); }
+      if (account_id) { where.push(`s.account_id=$${idx++}`); params.push(account_id); }
       const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
       const pg = parseInt(page); const lim = parseInt(limit);
-      const sales = queryAll(`SELECT s.*, a.shop_name, u.first_name as rep_first_name, u.last_name as rep_last_name FROM sales_data s LEFT JOIN accounts a ON s.account_id=a.id LEFT JOIN users u ON s.rep_id=u.id ${w} ORDER BY s.sale_date DESC LIMIT ? OFFSET ?`,
+      const sales = await queryAll(`SELECT s.*, a.shop_name, u.first_name as rep_first_name, u.last_name as rep_last_name FROM sales_data s LEFT JOIN accounts a ON s.account_id=a.id LEFT JOIN users u ON s.rep_id=u.id ${w} ORDER BY s.sale_date DESC LIMIT $${idx++} OFFSET $${idx++}`,
         [...params, lim, (pg-1)*lim]);
-      const tot = queryOne(`SELECT COUNT(*) as total FROM sales_data s ${w}`, params);
-      res.json({ sales, pagination: { page: pg, limit: lim, total: tot?.total || 0 } });
+      const tot = await queryOne(`SELECT COUNT(*) as total FROM sales_data s ${w}`, params);
+      res.json({ sales, pagination: { page: pg, limit: lim, total: parseInt(tot?.total) || 0 } });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.post('/api/sales/import', authenticate, (req, res) => {
+  app.post('/api/sales/import', authenticate, async (req, res) => {
     try {
       const { records } = req.body;
       if (!Array.isArray(records)) return res.status(400).json({ error: 'records array required' });
-      const allAccounts = queryAll('SELECT id, shop_name FROM accounts WHERE deleted_at IS NULL');
+      const allAccounts = await queryAll('SELECT id, shop_name FROM accounts WHERE deleted_at IS NULL');
       let imported = 0; const unmatched = [];
       for (const r of records) {
         const name = r.customer_name || r['Customer Name'] || r['Name'] || '';
@@ -350,77 +353,111 @@ async function startServer() {
           if (s > best && s >= 0.80) { best = s; matchId = a.id; }
         }
         const month = date.substring(0, 7);
-        execute('INSERT INTO sales_data (account_id,rep_id,sale_amount,sale_date,month,memo,customer_name,imported_from_accountedge) VALUES (?,?,?,?,?,?,?,1)',
-          [matchId, req.user.userId, amt, date, month, memo, name]);
+        await execute('INSERT INTO sales_data (account_id,rep_id,sale_amount,sale_date,month,memo,customer_name,imported_from_accountedge) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+          [matchId, req.user.userId, amt, date, month, memo, name, true]);
         if (!matchId) unmatched.push({ customer_name: name, amount: amt, date });
         imported++;
       }
-      logAudit(req, 'sale', null, 'import', { imported, unmatched: unmatched.length });
+      await logAudit(req, 'sale', null, 'import', { imported, unmatched: unmatched.length });
       res.json({ imported, unmatched, total: records.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ─── DASHBOARD ───
-  app.get('/api/sales/dashboard/metrics', authenticate, (req, res) => {
+  app.get('/api/sales/dashboard/metrics', authenticate, async (req, res) => {
     try {
       const isRep = req.user.role === 'rep';
       const uid = req.user.userId;
-      const rf = isRep ? 'AND assigned_rep_id = ?' : '';
-      const rfs = isRep ? 'WHERE rep_id = ?' : '';
-      const rfp = isRep ? [uid] : [];
 
-      const statusCounts = queryAll(`SELECT status, COUNT(*) as count FROM accounts WHERE deleted_at IS NULL ${rf} GROUP BY status`, rfp);
-      const monthlyRevenue = queryAll(`SELECT month, SUM(sale_amount) as total, COUNT(*) as count FROM sales_data ${rfs} GROUP BY month ORDER BY month DESC LIMIT 12`, rfp).reverse();
-      const topAccounts = queryAll(`SELECT a.shop_name, a.city, SUM(s.sale_amount) as total_revenue, COUNT(s.id) as sale_count FROM sales_data s JOIN accounts a ON s.account_id=a.id ${rfs ? rfs.replace('WHERE', 'WHERE') + ' AND' : 'WHERE'} s.account_id IS NOT NULL GROUP BY s.account_id ORDER BY total_revenue DESC LIMIT 10`.replace('WHERE  AND', 'WHERE'), rfp);
-      const recentActivities = queryAll(`SELECT act.*, a.shop_name, u.first_name, u.last_name FROM activities act JOIN accounts a ON act.account_id=a.id JOIN users u ON act.rep_id=u.id ${isRep ? 'WHERE act.rep_id=?' : ''} ORDER BY act.created_at DESC LIMIT 10`, rfp);
-      const dormantCount = queryOne(`SELECT COUNT(*) as count FROM accounts WHERE deleted_at IS NULL AND status IN ('prospect','active') AND (last_contacted_at IS NULL OR last_contacted_at < datetime('now','-14 days')) ${rf}`, rfp);
+      const statusCounts = await queryAll(
+        isRep
+          ? 'SELECT status, COUNT(*) as count FROM accounts WHERE deleted_at IS NULL AND assigned_rep_id = $1 GROUP BY status'
+          : 'SELECT status, COUNT(*) as count FROM accounts WHERE deleted_at IS NULL GROUP BY status',
+        isRep ? [uid] : []);
 
-      res.json({ statusCounts, monthlyRevenue, topAccounts, recentActivities, dormantCount: dormantCount?.count || 0,
-        totalAccounts: statusCounts.reduce((s, c) => s + c.count, 0) });
+      const monthlyRevenue = await queryAll(
+        isRep
+          ? 'SELECT month, SUM(sale_amount) as total, COUNT(*) as count FROM sales_data WHERE rep_id = $1 GROUP BY month ORDER BY month DESC LIMIT 12'
+          : 'SELECT month, SUM(sale_amount) as total, COUNT(*) as count FROM sales_data GROUP BY month ORDER BY month DESC LIMIT 12',
+        isRep ? [uid] : []);
+
+      const topAccounts = await queryAll(
+        isRep
+          ? 'SELECT a.shop_name, a.city, SUM(s.sale_amount) as total_revenue, COUNT(s.id) as sale_count FROM sales_data s JOIN accounts a ON s.account_id=a.id WHERE s.rep_id = $1 AND s.account_id IS NOT NULL GROUP BY a.shop_name, a.city ORDER BY total_revenue DESC LIMIT 10'
+          : 'SELECT a.shop_name, a.city, SUM(s.sale_amount) as total_revenue, COUNT(s.id) as sale_count FROM sales_data s JOIN accounts a ON s.account_id=a.id WHERE s.account_id IS NOT NULL GROUP BY a.shop_name, a.city ORDER BY total_revenue DESC LIMIT 10',
+        isRep ? [uid] : []);
+
+      const recentActivities = await queryAll(
+        isRep
+          ? 'SELECT act.*, a.shop_name, u.first_name, u.last_name FROM activities act JOIN accounts a ON act.account_id=a.id JOIN users u ON act.rep_id=u.id WHERE act.rep_id=$1 ORDER BY act.created_at DESC LIMIT 10'
+          : 'SELECT act.*, a.shop_name, u.first_name, u.last_name FROM activities act JOIN accounts a ON act.account_id=a.id JOIN users u ON act.rep_id=u.id ORDER BY act.created_at DESC LIMIT 10',
+        isRep ? [uid] : []);
+
+      const dormantCount = await queryOne(
+        isRep
+          ? "SELECT COUNT(*) as count FROM accounts WHERE deleted_at IS NULL AND status IN ('prospect','active') AND (last_contacted_at IS NULL OR last_contacted_at < NOW() - INTERVAL '14 days') AND assigned_rep_id = $1"
+          : "SELECT COUNT(*) as count FROM accounts WHERE deleted_at IS NULL AND status IN ('prospect','active') AND (last_contacted_at IS NULL OR last_contacted_at < NOW() - INTERVAL '14 days')",
+        isRep ? [uid] : []);
+
+      res.json({
+        statusCounts: statusCounts.map(r => ({ ...r, count: parseInt(r.count) })),
+        monthlyRevenue: monthlyRevenue.reverse().map(r => ({ ...r, total: parseFloat(r.total), count: parseInt(r.count) })),
+        topAccounts: topAccounts.map(r => ({ ...r, total_revenue: parseFloat(r.total_revenue), sale_count: parseInt(r.sale_count) })),
+        recentActivities,
+        dormantCount: parseInt(dormantCount?.count) || 0,
+        totalAccounts: statusCounts.reduce((s, c) => s + parseInt(c.count), 0)
+      });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ─── SEARCH ───
-  app.post('/api/search', authenticate, (req, res) => {
+  app.post('/api/search', authenticate, async (req, res) => {
     try {
       const q = (req.body.query || '').toLowerCase().trim();
       if (!q) return res.status(400).json({ error: 'Query required' });
 
-      let where = ['a.deleted_at IS NULL']; let params = [];
+      let where = ['a.deleted_at IS NULL']; let params = []; let idx = 1;
       const repMatch = q.match(/(?:michelle|ben|adam)(?:'s)?/i);
-      if (repMatch) { where.push('u.first_name LIKE ?'); params.push(`%${repMatch[0].replace("'s",'')}%`); }
+      if (repMatch) { where.push(`u.first_name ILIKE $${idx++}`); params.push(`%${repMatch[0].replace("'s",'')}%`); }
 
       const statusMap = { prospect:'prospect', prospects:'prospect', active:'active', customers:'active', clients:'active', cold:'cold', dnc:'dnc', 'do not contact':'dnc', churned:'churned' };
-      for (const [kw, st] of Object.entries(statusMap)) { if (q.includes(kw)) { where.push('a.status=?'); params.push(st); break; } }
+      for (const [kw, st] of Object.entries(statusMap)) { if (q.includes(kw)) { where.push(`a.status=$${idx++}`); params.push(st); break; } }
 
       const cityMatch = q.match(/(?:in|from|near)\s+([a-z\s]+?)(?:\s|$)/i);
-      if (cityMatch) { where.push('a.city LIKE ?'); params.push(`%${cityMatch[1].trim()}%`); }
+      if (cityMatch) { where.push(`a.city ILIKE $${idx++}`); params.push(`%${cityMatch[1].trim()}%`); }
 
-      if (q.includes('sherwin')) where.push('a.former_sherwin_client = 1');
+      if (q.includes('sherwin')) where.push('a.former_sherwin_client = true');
       if (q.includes('dormant') || q.includes("haven't contacted") || q.includes('overdue')) {
-        where.push("(a.last_contacted_at IS NULL OR a.last_contacted_at < datetime('now','-14 days'))");
+        where.push("(a.last_contacted_at IS NULL OR a.last_contacted_at < NOW() - INTERVAL '14 days')");
         where.push("a.status IN ('prospect','active')");
       }
 
       if (q.includes('notes') || q.includes('note')) {
         const ns = q.replace(/notes?|on|about|for|show|me|find|get|what/gi, '').trim();
-        const results = queryAll('SELECT n.*, a.shop_name, u.first_name, u.last_name FROM notes n JOIN accounts a ON n.account_id=a.id JOIN users u ON n.created_by_id=u.id WHERE a.shop_name LIKE ? OR n.content LIKE ? ORDER BY n.created_at DESC LIMIT 20',
+        const results = await queryAll('SELECT n.*, a.shop_name, u.first_name, u.last_name FROM notes n JOIN accounts a ON n.account_id=a.id JOIN users u ON n.created_by_id=u.id WHERE a.shop_name ILIKE $1 OR n.content ILIKE $2 ORDER BY n.created_at DESC LIMIT 20',
           [`%${ns}%`, `%${ns}%`]);
         return res.json({ type: 'notes', results, query: q });
       }
 
       if (where.length === 1) {
         const terms = q.replace(/show|me|find|all|the|get|list|search|for|who|what|which|where/gi, '').trim();
-        if (terms) { where.push('(a.shop_name LIKE ? OR a.contact_names LIKE ? OR a.city LIKE ?)'); const t = `%${terms}%`; params.push(t,t,t); }
+        if (terms) { where.push(`(a.shop_name ILIKE $${idx} OR a.contact_names ILIKE $${idx+1} OR a.city ILIKE $${idx+2})`); const t = `%${terms}%`; params.push(t,t,t); idx += 3; }
       }
 
-      const results = queryAll(`SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE ${where.join(' AND ')} ORDER BY a.shop_name LIMIT 50`, params);
+      const results = await queryAll(`SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE ${where.join(' AND ')} ORDER BY a.shop_name LIMIT 50`, params);
       res.json({ type: 'accounts', results, query: q });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ─── HEALTH ───
-  app.get('/api/health', (req, res) => res.json({ status: 'ok', app: 'Refinish AI CRM', version: '1.0.0' }));
+  app.get('/api/health', async (req, res) => {
+    try {
+      await queryOne('SELECT 1 as ok');
+      res.json({ status: 'ok', app: 'CHC CRM', version: '1.1.0', database: 'supabase' });
+    } catch (e) {
+      res.status(500).json({ status: 'error', error: e.message });
+    }
+  });
 
   // Serve frontend
   const frontendPath = path.join(__dirname, '../frontend/dist');
@@ -428,8 +465,9 @@ async function startServer() {
   app.get('*', (req, res) => { if (!req.path.startsWith('/api')) res.sendFile(path.join(frontendPath, 'index.html')); });
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n  Refinish AI CRM - CHC Paint & Auto Body Supplies`);
-    console.log(`  Server running on http://localhost:${PORT}\n`);
+    console.log(`\n  CRM - CHC Paint & Auto Body Supplies`);
+    console.log(`  Server running on http://localhost:${PORT}`);
+    console.log(`  Database: Supabase PostgreSQL\n`);
   });
 }
 

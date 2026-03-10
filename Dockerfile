@@ -19,15 +19,12 @@ COPY frontend/ ./frontend/
 # Build frontend
 RUN cd frontend && npx vite build
 
-# Create data directory for SQLite
-RUN mkdir -p backend/data
-
 # Expose port
-EXPOSE 3001
+EXPOSE 10000
 
 # Set environment
 ENV NODE_ENV=production
-ENV PORT=3001
+ENV PORT=10000
 
 # Start server (auto-seeds on first run)
 CMD ["node", "backend/server.js"]

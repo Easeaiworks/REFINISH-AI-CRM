@@ -1,65 +1,70 @@
-const initSqlJs = require('sql.js');
+const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '../../data/crm.db');
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
-let db = null;
+let pool = null;
 
 async function initDatabase() {
-  const SQL = await initSqlJs();
-
-  if (fs.existsSync(DB_PATH)) {
-    const buffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(buffer);
-    console.log('Loaded existing database from', DB_PATH);
-  } else {
-    db = new SQL.Database();
-    console.log('Created new database');
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL environment variable is required. Set it to your Supabase PostgreSQL connection string.');
   }
 
-  const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
-  db.run(schema);
-  db.run('PRAGMA foreign_keys=ON');
-  saveDatabase();
-  console.log('Database initialized successfully');
-  return db;
+  pool = new Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  });
+
+  // Test connection
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT NOW()');
+    console.log('Connected to Supabase PostgreSQL');
+
+    // Run schema (CREATE IF NOT EXISTS is safe to re-run)
+    const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
+    await client.query(schema);
+    console.log('Database schema initialized');
+  } finally {
+    client.release();
+  }
+
+  return pool;
 }
 
-function getDb() {
-  if (!db) throw new Error('Database not initialized');
-  return db;
+async function queryAll(sql, params = []) {
+  const result = await pool.query(sql, params);
+  return result.rows;
 }
 
-function saveDatabase() {
-  if (!db) return;
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+async function queryOne(sql, params = []) {
+  const result = await pool.query(sql, params);
+  return result.rows.length > 0 ? result.rows[0] : null;
 }
 
-function queryAll(sql, params = []) {
-  const stmt = db.prepare(sql);
-  if (params.length > 0) stmt.bind(params);
-  const results = [];
-  while (stmt.step()) results.push(stmt.getAsObject());
-  stmt.free();
-  return results;
+async function execute(sql, params = []) {
+  // If the SQL is an INSERT, append RETURNING id to get the inserted ID
+  let finalSql = sql;
+  const isInsert = sql.trim().toUpperCase().startsWith('INSERT');
+  if (isInsert && !sql.toUpperCase().includes('RETURNING')) {
+    finalSql = sql + ' RETURNING id';
+  }
+
+  const result = await pool.query(finalSql, params);
+  return {
+    changes: result.rowCount || 0,
+    lastId: (result.rows && result.rows[0]) ? result.rows[0].id : 0,
+  };
 }
 
-function queryOne(sql, params = []) {
-  const results = queryAll(sql, params);
-  return results.length > 0 ? results[0] : null;
+function getPool() {
+  if (!pool) throw new Error('Database not initialized');
+  return pool;
 }
 
-function execute(sql, params = []) {
-  db.run(sql, params);
-  const changesResult = queryOne('SELECT changes() as changes');
-  const lastIdResult = queryOne('SELECT last_insert_rowid() as id');
-  saveDatabase();
-  return { changes: changesResult?.changes || 0, lastId: lastIdResult?.id || 0 };
-}
-
-module.exports = { initDatabase, getDb, saveDatabase, queryAll, queryOne, execute };
+module.exports = { initDatabase, getPool, queryAll, queryOne, execute };

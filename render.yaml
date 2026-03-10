@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: refinish-ai-crm
+    name: chc-crm
     runtime: docker
     dockerfilePath: ./Dockerfile
     repo: https://github.com/Easeaiworks/REFINISH-AI-CRM.git
@@ -13,4 +13,6 @@ services:
         generateValue: true
       - key: PORT
         value: 10000
+      - key: DATABASE_URL
+        sync: false
     healthCheckPath: /api/health
