@@ -45,11 +45,11 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2">
               <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center font-bold text-sm">
-                R
+                C
               </div>
               <div className="hidden sm:block">
-                <div className="font-bold text-lg leading-tight">Refinish AI</div>
-                <div className="text-[10px] text-navy-300 leading-tight">CHC Paint & Auto Body</div>
+                <div className="font-bold text-lg leading-tight">CRM</div>
+                <div className="text-[10px] text-navy-300 leading-tight">CHC Paint & Auto Body Supplies</div>
               </div>
             </Link>
           </div>
@@ -114,7 +114,7 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
         {/* Quick stats in sidebar */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-navy-100">
           <div className="text-xs text-navy-400 mb-1">Powered by</div>
-          <div className="text-sm font-bold text-navy-700">Refinish AI v1.0</div>
+          <div className="text-sm font-bold text-navy-700">CHC Paint & Auto Body Supplies</div>
         </div>
       </aside>
 

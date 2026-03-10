@@ -33,9 +33,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         {/* Logo area */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-500 rounded-2xl mb-4">
-            <span className="text-white font-bold text-2xl">R</span>
+            <span className="text-white font-bold text-2xl">C</span>
           </div>
-          <h1 className="text-3xl font-bold text-white">Refinish AI</h1>
+          <h1 className="text-3xl font-bold text-white">CRM</h1>
           <p className="text-navy-300 mt-2">CHC Paint & Auto Body Supplies</p>
         </div>
 
