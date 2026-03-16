@@ -371,6 +371,18 @@ async function startServer() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ─── CLEAR SALES DATA (admin only) ───
+  app.delete('/api/sales/all', authenticate, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      const result = await queryOne('SELECT COUNT(*) as count FROM sales_data');
+      const count = parseInt(result?.count) || 0;
+      await execute('DELETE FROM sales_data');
+      await logAudit(req, 'sale', null, 'delete', { action: 'clear_all_sales', records_deleted: count });
+      res.json({ deleted: count, message: `All ${count} sales records have been deleted` });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ─── DASHBOARD ───
   app.get('/api/sales/dashboard/metrics', authenticate, async (req, res) => {
     try {

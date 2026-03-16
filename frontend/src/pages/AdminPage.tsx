@@ -20,7 +20,7 @@ interface DigestPreview {
 
 export default function AdminPage({ user }: Props) {
   const [users, setUsers] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'users' | 'notifications' | 'audit'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'notifications' | 'data' | 'audit'>('users');
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', first_name: '', last_name: '', role: 'rep' });
   const [error, setError] = useState('');
@@ -32,6 +32,11 @@ export default function AdminPage({ user }: Props) {
   const [digestPreview, setDigestPreview] = useState<DigestPreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [sendingDigest, setSendingDigest] = useState(false);
+
+  // Data management state
+  const [clearingData, setClearingData] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [dataMessage, setDataMessage] = useState('');
 
   useEffect(() => { loadUsers(); }, []);
 
@@ -85,6 +90,21 @@ export default function AdminPage({ user }: Props) {
     }
   };
 
+  const clearAllSalesData = async () => {
+    setClearingData(true);
+    setDataMessage('');
+    try {
+      const data = await api.delete('/sales/all');
+      setDataMessage(`Successfully deleted ${data.deleted} sales records.`);
+      setConfirmClear(false);
+      setTimeout(() => setDataMessage(''), 5000);
+    } catch (err: any) {
+      setError(err.error || 'Failed to clear sales data');
+    } finally {
+      setClearingData(false);
+    }
+  };
+
   const createUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -107,6 +127,7 @@ export default function AdminPage({ user }: Props) {
         {[
           { key: 'users', label: 'User Management' },
           { key: 'notifications', label: 'Notifications' },
+          { key: 'data', label: 'Data Management' },
           { key: 'audit', label: 'Audit Log' }
         ].map(tab => (
           <button
@@ -361,6 +382,53 @@ export default function AdminPage({ user }: Props) {
                       ))}
                     </ul>
                   )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'data' && (
+        <div className="space-y-6">
+          <div className="card">
+            <h2 className="font-bold text-navy-900 mb-2">Sales Data Management</h2>
+            <p className="text-sm text-navy-500 mb-6">
+              Clear imported sales data so you can re-import with the correct settings. This removes all sales records from the database but does not affect accounts, notes, or activities.
+            </p>
+
+            {dataMessage && (
+              <div className="bg-green-50 text-green-700 text-sm px-4 py-3 rounded-lg mb-4 border border-green-200">{dataMessage}</div>
+            )}
+            {error && activeTab === 'data' && (
+              <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-lg mb-4 border border-red-200">{error}</div>
+            )}
+
+            {!confirmClear ? (
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="px-6 py-3 bg-red-500 text-white font-medium rounded-xl hover:bg-red-600 transition-colors"
+              >
+                Clear All Sales Data
+              </button>
+            ) : (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-3">
+                <p className="text-red-800 font-medium">Are you sure? This will permanently delete ALL imported sales records.</p>
+                <p className="text-sm text-red-600">This cannot be undone. You will need to re-import your AccountEdge CSV after clearing.</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={clearAllSalesData}
+                    disabled={clearingData}
+                    className="px-6 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    {clearingData ? 'Deleting...' : 'Yes, Delete All Sales Data'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmClear(false)}
+                    className="px-6 py-2 bg-white text-navy-700 font-medium rounded-lg border border-navy-200 hover:bg-navy-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             )}
