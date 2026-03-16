@@ -256,6 +256,33 @@ export default function SalesPage({ user }: Props) {
       // Clear the URL param so it doesn't re-trigger
       setSearchParams({}, { replace: true });
     }
+
+    // Handle ?rep= URL param (from voice navigation) — fuzzy match to salesperson names
+    const repParam = searchParams.get('rep');
+    if (repParam && sales.length > 0) {
+      const query = repParam.toLowerCase();
+      const reps = [...new Set(sales.map(s => s.salesperson || '').filter(Boolean))];
+      const match = reps.find(r => r.toLowerCase().includes(query) || query.includes(r.toLowerCase()));
+      if (match) {
+        setFilterSalesperson(match);
+        setVoiceMatchFeedback(`Showing sales for rep: ${match}`);
+      } else {
+        // Try word overlap
+        const queryWords = query.split(/\s+/);
+        const scored = reps.map(r => {
+          const rWords = r.toLowerCase().split(/\s+/);
+          const overlap = queryWords.filter(w => rWords.some(rw => rw.includes(w) || w.includes(rw))).length;
+          return { name: r, score: overlap };
+        }).filter(s => s.score > 0).sort((a, b) => b.score - a.score);
+        if (scored.length > 0) {
+          setFilterSalesperson(scored[0].name);
+          setVoiceMatchFeedback(`Matched "${repParam}" to rep: ${scored[0].name}`);
+        } else {
+          setVoiceMatchFeedback(`No salesperson found matching "${repParam}"`);
+        }
+      }
+      setSearchParams({}, { replace: true });
+    }
   }, [searchParams, sales, setSearchParams]);
 
   const loadSales = async () => {

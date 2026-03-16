@@ -17,8 +17,8 @@ interface UseVoiceNavigationReturn {
 
 const NAV_ROUTES: { patterns: RegExp[]; path: string; label: string }[] = [
   { patterns: [/\b(dashboard|home|main|overview)\b/i], path: '/', label: 'Dashboard' },
-  { patterns: [/\b(accounts?|shops?|contacts?|customers?)\b/i, /\b(show|list|view|open)\s+(all\s+)?(accounts?|shops?)\b/i], path: '/accounts', label: 'Accounts' },
-  { patterns: [/\b(sales?|revenue|money|imports?)\b/i], path: '/sales', label: 'Sales' },
+  { patterns: [/\b(show|list|view|open|go\s*to)\s+(all\s+)?(accounts?|shops?|contacts?|customers?)\b/i, /^(accounts?|shops?|contacts?|customers?)$/i], path: '/accounts', label: 'Accounts' },
+  { patterns: [/\b(show|go\s*to|open)\s+(all\s+)?(sales|revenue)\b/i, /^(sales|revenue|money|imports?)$/i], path: '/sales', label: 'Sales' },
   { patterns: [/\b(admin|settings?|users?|team)\b/i], path: '/admin', label: 'Admin' },
 ];
 
@@ -34,6 +34,12 @@ const SALES_CUSTOMER_PATTERNS = [
   /\b(.+?)\s+(?:invoices?|sales|revenue|transactions?|orders?)\b/i,
   /\b(?:invoices?|sales|revenue|transactions?|orders?)\s+(?:for|from|of)\s+(.+)/i,
   /\b(?:show|pull\s*up|view|get|find)\s+(.+?)\s+(?:invoices?|sales|revenue|transactions?)\b/i,
+];
+
+// Patterns for salesperson lookups
+const SALESPERSON_PATTERNS = [
+  /\b(.+?)(?:'s|s)\s+(?:sales|revenue|numbers?|accounts?|customers?|invoices?)\b/i,
+  /\b(?:sales|revenue|numbers?|invoices?)\s+(?:for|from|by)\s+(.+)/i,
 ];
 
 export function useVoiceNavigation(
@@ -67,6 +73,17 @@ export function useVoiceNavigation(
           onNavigate(route.path);
           return;
         }
+      }
+    }
+
+    // Check for salesperson lookup (e.g. "Ben's sales", "revenue for Michelle")
+    for (const pattern of SALESPERSON_PATTERNS) {
+      const match = cleaned.match(pattern);
+      const repName = (match?.[1] || match?.[2] || '').trim();
+      if (repName && repName.length > 1) {
+        showFeedback(`Showing sales by "${repName}"`);
+        onNavigate(`/sales?rep=${encodeURIComponent(repName)}`);
+        return;
       }
     }
 
