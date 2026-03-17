@@ -8,8 +8,13 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cron = require('node-cron');
+const { Resend } = require('resend');
 const { initDatabase, queryAll, queryOne, execute } = require('./src/db/init');
 const { runGDriveImport } = require('./src/gdrive-import');
+
+// ─── EMAIL (RESEND) ───
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const EMAIL_FROM = process.env.EMAIL_FROM || 'CHC CRM <noreply@chcpaint.com>';
 
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'refinish-ai-dev-secret-change-in-production';
@@ -744,9 +749,7 @@ async function startServer() {
   }
 
   async function sendManagerSummary() {
-    const sendgridApiKey = process.env.SENDGRID_API_KEY;
-    const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
-    if (!sendgridApiKey || !sendgridFromEmail || MANAGER_EMAILS.length === 0) return;
+    if (!resend || MANAGER_EMAILS.length === 0) return;
 
     const repDigests = await generateManagerSummary();
     if (repDigests.length === 0) return;
@@ -755,11 +758,9 @@ async function startServer() {
     const dateStr = new Date().toLocaleDateString();
 
     try {
-      const sgMail = require('@sendgrid/mail');
-      sgMail.setApiKey(sendgridApiKey);
-      await sgMail.send({
+      await resend.emails.send({
+        from: EMAIL_FROM,
         to: MANAGER_EMAILS,
-        from: sendgridFromEmail,
         subject: `Team Daily Summary — ${dateStr}`,
         html: htmlContent
       });
@@ -786,8 +787,6 @@ async function startServer() {
         const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
         const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
         const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
-        const sendgridApiKey = process.env.SENDGRID_API_KEY;
-        const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
 
         // Build digest message with follow-up details
         let digestText = `Daily Digest for ${digest.user.first_name}\n\n`;
@@ -828,11 +827,9 @@ async function startServer() {
           }
         }
 
-        // Send email if enabled
-        if (digest.user.email_enabled && digest.user.notification_email && sendgridApiKey && sendgridFromEmail) {
+        // Send email via Resend
+        if (digest.user.email_enabled && digest.user.notification_email && resend) {
           try {
-            const sgMail = require('@sendgrid/mail');
-            sgMail.setApiKey(sendgridApiKey);
             let htmlContent = `<h2>Daily Digest for ${digest.user.first_name}</h2>`;
             if (digest.dueFollowUps.length > 0) {
               htmlContent += `<h3>Due Today (${digest.dueFollowUps.length})</h3><ul>`;
@@ -853,9 +850,9 @@ async function startServer() {
             htmlContent += `<p><strong>Dormant Accounts:</strong> ${digest.dormantAccounts.length}</p>
               <p><strong>New Notes from Team:</strong> ${digest.newNotes.length}</p>`;
 
-            await sgMail.send({
+            await resend.emails.send({
+              from: EMAIL_FROM,
               to: digest.user.notification_email,
-              from: sendgridFromEmail,
               subject: `Daily Digest - ${new Date().toLocaleDateString()}`,
               html: htmlContent
             });
@@ -995,8 +992,6 @@ async function startServer() {
         const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
         const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
         const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
-        const sendgridApiKey = process.env.SENDGRID_API_KEY;
-        const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
 
         let digestText = `Daily Digest for ${userData.first_name}\n\n`;
         if (digest.dueFollowUps.length > 0) {
@@ -1034,11 +1029,9 @@ async function startServer() {
           }
         }
 
-        // Send email
-        if (userData.email_enabled && userData.notification_email && sendgridApiKey && sendgridFromEmail) {
+        // Send email via Resend
+        if (userData.email_enabled && userData.notification_email && resend) {
           try {
-            const sgMail = require('@sendgrid/mail');
-            sgMail.setApiKey(sendgridApiKey);
             let htmlContent = `<h2>Daily Digest for ${userData.first_name}</h2>`;
             if (digest.dueFollowUps.length > 0) {
               htmlContent += `<h3>Due Today (${digest.dueFollowUps.length})</h3><ul>`;
@@ -1059,9 +1052,9 @@ async function startServer() {
             htmlContent += `<p><strong>Dormant Accounts:</strong> ${digest.dormantAccounts.length}</p>
               <p><strong>New Notes from Team:</strong> ${digest.newNotes.length}</p>`;
 
-            await sgMail.send({
+            await resend.emails.send({
+              from: EMAIL_FROM,
               to: userData.notification_email,
-              from: sendgridFromEmail,
               subject: `Daily Digest - ${new Date().toLocaleDateString()}`,
               html: htmlContent
             });
