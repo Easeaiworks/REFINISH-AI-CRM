@@ -197,29 +197,51 @@ export default function AccountsPage({ user }: Props) {
                     <span className="badge badge-active flex-shrink-0">Customer</span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-navy-100">
-                  {account.phone && (
-                    <>
-                      <a href={`tel:${account.phone.replace(/[^\d+]/g, '')}`} onClick={e => e.stopPropagation()}
-                        className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-lg active:scale-95">
-                        Call
-                      </a>
-                      <a href={`sms:${account.phone.replace(/[^\d+]/g, '')}`} onClick={e => e.stopPropagation()}
-                        className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-lg active:scale-95">
-                        Text
-                      </a>
-                    </>
-                  )}
-                  {account.email && (
-                    <a href={`mailto:${account.email}`} onClick={e => e.stopPropagation()}
-                      className="flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-lg active:scale-95">
-                      Email
+                {/* Large contact action buttons — tap to call/text/email directly */}
+                <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-navy-100">
+                  {account.phone ? (
+                    <a href={`tel:${account.phone.replace(/[^\d+]/g, '')}`}
+                      onClick={e => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${account.phone!.replace(/[^\d+]/g, '')}`; }}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 active:scale-95 transition-all no-underline">
+                      <span className="text-xl">📞</span>
+                      <span className="text-xs font-semibold">Call</span>
                     </a>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-gray-50 text-gray-300">
+                      <span className="text-xl opacity-40">📞</span>
+                      <span className="text-xs">Call</span>
+                    </div>
                   )}
-                  {account.rep_first_name && (
-                    <span className="text-xs text-navy-400 ml-auto">Rep: {account.rep_first_name}</span>
+                  {account.phone ? (
+                    <a href={`sms:${account.phone.replace(/[^\d+]/g, '')}`}
+                      onClick={e => { e.stopPropagation(); e.preventDefault(); window.location.href = `sms:${account.phone!.replace(/[^\d+]/g, '')}`; }}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 active:scale-95 transition-all no-underline">
+                      <span className="text-xl">💬</span>
+                      <span className="text-xs font-semibold">Text</span>
+                    </a>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-gray-50 text-gray-300">
+                      <span className="text-xl opacity-40">💬</span>
+                      <span className="text-xs">Text</span>
+                    </div>
+                  )}
+                  {account.email ? (
+                    <a href={`mailto:${account.email}`}
+                      onClick={e => { e.stopPropagation(); e.preventDefault(); window.location.href = `mailto:${account.email}`; }}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 active:scale-95 transition-all no-underline">
+                      <span className="text-xl">📧</span>
+                      <span className="text-xs font-semibold">Email</span>
+                    </a>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-gray-50 text-gray-300">
+                      <span className="text-xl opacity-40">📧</span>
+                      <span className="text-xs">Email</span>
+                    </div>
                   )}
                 </div>
+                {account.rep_first_name && (
+                  <div className="text-xs text-navy-400 mt-1.5 text-right">Rep: {account.rep_first_name}</div>
+                )}
               </div>
             ))}
           </div>
