@@ -42,6 +42,8 @@ export default function AdminPage({ user }: Props) {
   const [resetPasswordUser, setResetPasswordUser] = useState<ManagedUser | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
 
   // Notification state
   const [notifSettings, setNotifSettings] = useState<NotificationSettings>({ phone: null, notification_email: null, sms_enabled: false, email_enabled: true, daily_digest_time: '07:30' });
@@ -147,6 +149,7 @@ export default function AdminPage({ user }: Props) {
     try {
       await api.post('/auth/register', newUser);
       setShowAddUser(false);
+      setShowCreatePassword(false);
       setNewUser({ email: '', password: '', first_name: '', last_name: '', role: 'rep' });
       showSuccess('User created successfully');
       loadUsers();
@@ -163,6 +166,7 @@ export default function AdminPage({ user }: Props) {
       showSuccess(data.message);
       setResetPasswordUser(null);
       setNewPassword('');
+      setShowResetPassword(false);
     } catch (err: any) {
       showError(err.error || 'Failed to reset password');
     } finally {
@@ -479,8 +483,14 @@ export default function AdminPage({ user }: Props) {
                   </div>
                   <input required type="email" placeholder="Email" value={newUser.email}
                     onChange={e => setNewUser(u => ({...u, email: e.target.value}))} className="input-field" />
-                  <input required type="password" placeholder="Temporary Password (6+ chars)" value={newUser.password}
-                    onChange={e => setNewUser(u => ({...u, password: e.target.value}))} className="input-field" minLength={6} />
+                  <div className="relative">
+                    <input required type={showCreatePassword ? 'text' : 'password'} placeholder="Temporary Password (6+ chars)" value={newUser.password}
+                      onChange={e => setNewUser(u => ({...u, password: e.target.value}))} className="input-field pr-16" minLength={6} />
+                    <button type="button" onClick={() => setShowCreatePassword(v => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-navy-500 hover:text-navy-700 px-2 py-1 rounded bg-navy-50 hover:bg-navy-100 transition-colors">
+                      {showCreatePassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
                   <select value={newUser.role} onChange={e => setNewUser(u => ({...u, role: e.target.value}))} className="input-field">
                     <option value="rep">Sales Rep</option>
                     <option value="manager">Manager</option>
@@ -504,15 +514,21 @@ export default function AdminPage({ user }: Props) {
                 <p className="text-sm text-navy-500 mb-4">
                   Set a new password for <strong>{resetPasswordUser.first_name} {resetPasswordUser.last_name}</strong> ({resetPasswordUser.email})
                 </p>
-                <input
-                  type="password"
-                  placeholder="New password (6+ characters)"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  className="input-field mb-4"
-                  minLength={6}
-                  autoFocus
-                />
+                <div className="relative mb-4">
+                  <input
+                    type={showResetPassword ? 'text' : 'password'}
+                    placeholder="New password (6+ characters)"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    className="input-field pr-16"
+                    minLength={6}
+                    autoFocus
+                  />
+                  <button type="button" onClick={() => setShowResetPassword(v => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-navy-500 hover:text-navy-700 px-2 py-1 rounded bg-navy-50 hover:bg-navy-100 transition-colors">
+                    {showResetPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
                 <p className="text-xs text-navy-400 mb-4">You will need to share this password with the user directly.</p>
                 <div className="flex gap-3">
                   <button onClick={() => setResetPasswordUser(null)} className="btn-secondary flex-1">Cancel</button>
