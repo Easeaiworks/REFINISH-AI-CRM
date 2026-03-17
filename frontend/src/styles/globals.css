@@ -44,6 +44,15 @@
   animation: pulse-ring 1.5s ease-out infinite;
 }
 
+/* Toast slide-down animation */
+@keyframes slide-down {
+  0% { transform: translate(-50%, -100%); opacity: 0; }
+  100% { transform: translate(-50%, 0); opacity: 1; }
+}
+.animate-slide-down {
+  animation: slide-down 0.3s ease-out;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

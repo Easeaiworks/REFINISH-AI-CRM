@@ -750,6 +750,42 @@ async function startServer() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ─── VOICE FOLLOW-UP (quick create from voice command) ───
+  app.post('/api/voice-follow-up', authenticate, async (req, res) => {
+    try {
+      const { account_name, follow_up_date, notes } = req.body;
+      if (!account_name) return res.status(400).json({ error: 'account_name required' });
+      if (!follow_up_date) return res.status(400).json({ error: 'follow_up_date required' });
+
+      // Find account by name (case-insensitive, partial match)
+      let account = await queryOne(
+        'SELECT id, shop_name FROM accounts WHERE LOWER(shop_name) = LOWER($1) AND deleted_at IS NULL',
+        [account_name.trim()]
+      );
+
+      // If no exact match, try ILIKE partial match
+      if (!account) {
+        account = await queryOne(
+          'SELECT id, shop_name FROM accounts WHERE shop_name ILIKE $1 AND deleted_at IS NULL ORDER BY shop_name LIMIT 1',
+          [`%${account_name.trim()}%`]
+        );
+      }
+
+      if (!account) {
+        return res.status(404).json({ error: `Could not find account "${account_name}"` });
+      }
+
+      // Set follow-up date on account
+      await execute('UPDATE accounts SET follow_up_date = $1, updated_at = NOW() WHERE id = $2', [follow_up_date, account.id]);
+
+      // Create note for the follow-up
+      const noteContent = `[Follow-up scheduled for ${follow_up_date}] ${notes || ''}`.trim();
+      await execute('INSERT INTO notes (account_id, created_by_id, content) VALUES ($1, $2, $3)', [account.id, req.user.userId, noteContent]);
+
+      res.json({ success: true, account_id: account.id, shop_name: account.shop_name, follow_up_date, notes });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get('/api/follow-ups', authenticate, async (req, res) => {
     try {
       const isRep = req.user.role === 'rep';

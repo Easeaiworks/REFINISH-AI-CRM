@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../services/api';
-import { useVoiceNavigation } from '../../hooks/useVoiceNavigation';
+import { useVoiceNavigation, VoiceFollowUp } from '../../hooks/useVoiceNavigation';
 import { Account, Note, STATUS_COLORS } from '../../types';
 
 interface AISearchBarProps {
@@ -13,7 +13,30 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
   const [resultType, setResultType] = useState<string>('accounts');
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const toastTimeoutRef = useRef<any>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 4000);
+  };
+
+  // Handle voice follow-up creation
+  const handleVoiceFollowUp = async (followUp: VoiceFollowUp) => {
+    try {
+      const data = await api.post('/voice-follow-up', {
+        account_name: followUp.accountName,
+        follow_up_date: followUp.date,
+        notes: followUp.notes
+      });
+      const friendlyDate = new Date(followUp.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      showToast(`Follow-up set for ${data.shop_name} on ${friendlyDate}${followUp.notes ? ` — ${followUp.notes}` : ''}`);
+    } catch (err: any) {
+      showToast(err.error || 'Could not create follow-up', 'error');
+    }
+  };
 
   // Unified voice: uses voice navigation hook which handles nav, customer lookup, search, etc.
   const { isListening, feedback, startListening, stopListening, isSupported } = useVoiceNavigation(
@@ -26,7 +49,8 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
       // Voice search fallback — run it through the AI search
       setQuery(searchQuery);
       runSearch(searchQuery);
-    }
+    },
+    handleVoiceFollowUp
   );
 
   // Close results on click outside
@@ -197,6 +221,21 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
         <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-xl border border-navy-200 p-6 text-center z-50">
           <p className="text-navy-500 text-sm">No results found for "{query}"</p>
           <p className="text-navy-400 text-xs mt-1">Try: "prospects in Hamilton" or "former Sherwin clients"</p>
+        </div>
+      )}
+
+      {/* Follow-up toast confirmation */}
+      {toast && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 max-w-sm w-full px-4 py-3 rounded-xl shadow-2xl z-[100] text-sm font-medium animate-slide-down ${
+          toast.type === 'success'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-500 text-white'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span>{toast.type === 'success' ? '\u2713' : '\u2717'}</span>
+            <span className="flex-1">{toast.message}</span>
+            <button onClick={() => setToast(null)} className="text-white/70 hover:text-white">&times;</button>
+          </div>
         </div>
       )}
     </div>
