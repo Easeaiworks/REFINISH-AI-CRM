@@ -190,11 +190,11 @@ export function useVoiceNavigation(
     }
 
     // Check for follow-up creation (e.g. "follow up Complete Auto Body december 12 bring donuts")
-    // Patterns: "follow up [shop] [date] [notes]", "[shop] follow up [date] [notes]"
-    if (/\bfollow[\s-]?up\b/i.test(cleaned) && onFollowUp) {
-      // Remove the "follow up" keyword and common filler words
+    // Also catches: "meeting with ...", "appointment with ...", "schedule meeting ..."
+    if (/\b(follow[\s-]?up|meeting|appointment)\b/i.test(cleaned) && onFollowUp) {
+      // Remove the trigger keywords and common filler words
       const withoutFollowUp = cleaned
-        .replace(/\b(follow[\s-]?up|with|for|on|at|set|schedule|create|add|a|an|the|and|to)\b/gi, ' ')
+        .replace(/\b(follow[\s-]?up|meeting|appointment|with|for|on|at|set|schedule|create|add|book|a|an|the|and|to)\b/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 

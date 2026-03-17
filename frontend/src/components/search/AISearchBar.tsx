@@ -93,7 +93,7 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
 
   return (
     <div ref={wrapperRef} className="relative w-full">
-      <div className={`flex items-center bg-navy-800 rounded-lg border transition-colors ${
+      <div className={`flex items-center bg-navy-800 rounded-lg border transition-colors overflow-hidden ${
         isListening ? 'border-brand-500 ring-2 ring-brand-500/30' : 'border-navy-700 focus-within:border-brand-500'
       }`}>
         {/* Search icon */}
@@ -108,7 +108,7 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
           onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setShowResults(true)}
           placeholder={isListening ? 'Listening...' : 'Search or say a command...'}
-          className="flex-1 bg-transparent text-white text-sm px-3 py-2 outline-none placeholder-navy-400 min-w-0"
+          className="flex-1 bg-transparent text-white text-sm px-2 sm:px-3 py-2 outline-none placeholder-navy-400 min-w-0"
         />
         {/* Single unified mic button */}
         {isSupported && (
@@ -140,7 +140,7 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
         <button
           onClick={handleSearch}
           disabled={isSearching}
-          className="text-sm text-navy-300 hover:text-white px-3 py-2 border-l border-navy-700 flex-shrink-0"
+          className="text-sm text-navy-300 hover:text-white px-2 sm:px-3 py-2 border-l border-navy-700 flex-shrink-0 whitespace-nowrap"
         >
           {isSearching ? '...' : 'Go'}
         </button>

@@ -623,9 +623,21 @@ async function startServer() {
     const user = await queryOne('SELECT * FROM users WHERE id=$1', [userId]);
     if (!user) return null;
 
-    // Get follow-ups due today or overdue
+    // Get follow-ups due today or overdue, with their latest follow-up note
     const dueFollowUps = await queryAll(
-      'SELECT a.* FROM accounts a WHERE a.deleted_at IS NULL AND a.assigned_rep_id = $1 AND a.follow_up_date IS NOT NULL AND a.follow_up_date <= CURRENT_DATE ORDER BY a.follow_up_date ASC',
+      `SELECT a.*, (
+        SELECT n.content FROM notes n WHERE n.account_id = a.id AND n.content LIKE '[Follow-up%' ORDER BY n.created_at DESC LIMIT 1
+      ) as follow_up_note
+      FROM accounts a WHERE a.deleted_at IS NULL AND a.assigned_rep_id = $1 AND a.follow_up_date IS NOT NULL AND a.follow_up_date <= CURRENT_DATE ORDER BY a.follow_up_date ASC`,
+      [userId]
+    );
+
+    // Get upcoming follow-ups (next 7 days)
+    const upcomingFollowUps = await queryAll(
+      `SELECT a.*, (
+        SELECT n.content FROM notes n WHERE n.account_id = a.id AND n.content LIKE '[Follow-up%' ORDER BY n.created_at DESC LIMIT 1
+      ) as follow_up_note
+      FROM accounts a WHERE a.deleted_at IS NULL AND a.assigned_rep_id = $1 AND a.follow_up_date IS NOT NULL AND a.follow_up_date > CURRENT_DATE AND a.follow_up_date <= CURRENT_DATE + INTERVAL '7 days' ORDER BY a.follow_up_date ASC`,
       [userId]
     );
 
@@ -644,9 +656,117 @@ async function startServer() {
     return {
       user,
       dueFollowUps,
+      upcomingFollowUps,
       dormantAccounts,
       newNotes
     };
+  }
+
+  // Manager summary emails — aggregates all reps into one digest
+  const MANAGER_EMAILS = (process.env.MANAGER_DIGEST_EMAILS || 'frankc@chcpaint.com,manny@chcpaint.com,adam@chcpaint.com').split(',').map(e => e.trim()).filter(Boolean);
+
+  async function generateManagerSummary() {
+    const reps = await queryAll("SELECT id, first_name, last_name FROM users WHERE is_active = true AND role IN ('rep','manager') ORDER BY first_name");
+    const repDigests = [];
+    for (const rep of reps) {
+      const digest = await generateDigestForUser(rep.id);
+      if (digest) repDigests.push(digest);
+    }
+    return repDigests;
+  }
+
+  function buildManagerSummaryText(repDigests) {
+    let text = `TEAM DAILY SUMMARY — ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}\n\n`;
+    let totalDue = 0, totalUpcoming = 0, totalDormant = 0, totalNotes = 0;
+
+    for (const d of repDigests) {
+      totalDue += d.dueFollowUps.length;
+      totalUpcoming += d.upcomingFollowUps.length;
+      totalDormant += d.dormantAccounts.length;
+      totalNotes += d.newNotes.length;
+
+      text += `── ${d.user.first_name} ${d.user.last_name} ──\n`;
+      if (d.dueFollowUps.length > 0) {
+        text += `  Due Today: ${d.dueFollowUps.length}\n`;
+        d.dueFollowUps.forEach(a => {
+          const note = a.follow_up_note ? ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}` : '';
+          text += `    • ${a.shop_name}${note}\n`;
+        });
+      }
+      if (d.upcomingFollowUps.length > 0) {
+        text += `  Upcoming: ${d.upcomingFollowUps.length}\n`;
+        d.upcomingFollowUps.forEach(a => {
+          const note = a.follow_up_note ? ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}` : '';
+          text += `    • ${a.shop_name} (${a.follow_up_date})${note}\n`;
+        });
+      }
+      text += `  Dormant: ${d.dormantAccounts.length}  |  New Notes: ${d.newNotes.length}\n\n`;
+    }
+
+    text = `Team Totals: ${totalDue} due today, ${totalUpcoming} upcoming, ${totalDormant} dormant\n\n` + text;
+    return text;
+  }
+
+  function buildManagerSummaryHtml(repDigests) {
+    const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+    let totalDue = 0, totalUpcoming = 0, totalDormant = 0, totalNotes = 0;
+    for (const d of repDigests) {
+      totalDue += d.dueFollowUps.length;
+      totalUpcoming += d.upcomingFollowUps.length;
+      totalDormant += d.dormantAccounts.length;
+      totalNotes += d.newNotes.length;
+    }
+
+    let html = `<h2>Team Daily Summary — ${dateStr}</h2>`;
+    html += `<p style="font-size:16px;"><strong>${totalDue}</strong> due today &nbsp;|&nbsp; <strong>${totalUpcoming}</strong> upcoming &nbsp;|&nbsp; <strong>${totalDormant}</strong> dormant &nbsp;|&nbsp; <strong>${totalNotes}</strong> new notes</p><hr/>`;
+
+    for (const d of repDigests) {
+      html += `<h3>${d.user.first_name} ${d.user.last_name}</h3>`;
+      if (d.dueFollowUps.length > 0) {
+        html += `<p><strong>Due Today (${d.dueFollowUps.length}):</strong></p><ul>`;
+        d.dueFollowUps.forEach(a => {
+          const note = a.follow_up_note ? ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}` : '';
+          html += `<li><strong>${a.shop_name}</strong>${note}</li>`;
+        });
+        html += '</ul>';
+      }
+      if (d.upcomingFollowUps.length > 0) {
+        html += `<p><strong>Upcoming This Week (${d.upcomingFollowUps.length}):</strong></p><ul>`;
+        d.upcomingFollowUps.forEach(a => {
+          const note = a.follow_up_note ? ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}` : '';
+          html += `<li><strong>${a.shop_name}</strong> (${a.follow_up_date})${note}</li>`;
+        });
+        html += '</ul>';
+      }
+      html += `<p>Dormant: ${d.dormantAccounts.length} &nbsp;|&nbsp; New Notes: ${d.newNotes.length}</p><hr/>`;
+    }
+    return html;
+  }
+
+  async function sendManagerSummary() {
+    const sendgridApiKey = process.env.SENDGRID_API_KEY;
+    const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
+    if (!sendgridApiKey || !sendgridFromEmail || MANAGER_EMAILS.length === 0) return;
+
+    const repDigests = await generateManagerSummary();
+    if (repDigests.length === 0) return;
+
+    const htmlContent = buildManagerSummaryHtml(repDigests);
+    const dateStr = new Date().toLocaleDateString();
+
+    try {
+      const sgMail = require('@sendgrid/mail');
+      sgMail.setApiKey(sendgridApiKey);
+      await sgMail.send({
+        to: MANAGER_EMAILS,
+        from: sendgridFromEmail,
+        subject: `Team Daily Summary — ${dateStr}`,
+        html: htmlContent
+      });
+      console.log(`Manager summary sent to: ${MANAGER_EMAILS.join(', ')}`);
+    } catch (e) {
+      console.warn(`Manager summary email failed: ${e.message}`);
+    }
   }
 
   app.post('/api/notifications/send-digest', authenticate, async (req, res) => {
@@ -669,8 +789,27 @@ async function startServer() {
         const sendgridApiKey = process.env.SENDGRID_API_KEY;
         const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
 
-        // Build digest message
-        const digestText = `Daily Digest for ${digest.user.first_name}\n\nDue Follow-ups: ${digest.dueFollowUps.length}\nDormant Accounts: ${digest.dormantAccounts.length}\nNew Notes: ${digest.newNotes.length}`;
+        // Build digest message with follow-up details
+        let digestText = `Daily Digest for ${digest.user.first_name}\n\n`;
+        if (digest.dueFollowUps.length > 0) {
+          digestText += `DUE TODAY (${digest.dueFollowUps.length}):\n`;
+          digest.dueFollowUps.forEach(a => {
+            digestText += `- ${a.shop_name}`;
+            if (a.follow_up_note) digestText += ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}`;
+            digestText += '\n';
+          });
+          digestText += '\n';
+        }
+        if (digest.upcomingFollowUps.length > 0) {
+          digestText += `UPCOMING THIS WEEK (${digest.upcomingFollowUps.length}):\n`;
+          digest.upcomingFollowUps.forEach(a => {
+            digestText += `- ${a.shop_name} (${a.follow_up_date})`;
+            if (a.follow_up_note) digestText += ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}`;
+            digestText += '\n';
+          });
+          digestText += '\n';
+        }
+        digestText += `Dormant Accounts: ${digest.dormantAccounts.length}\nNew Notes: ${digest.newNotes.length}`;
 
         // Send SMS if enabled
         if (digest.user.sms_enabled && digest.user.phone && twilioAccountSid && twilioAuthToken && twilioPhoneNumber) {
@@ -694,9 +833,24 @@ async function startServer() {
           try {
             const sgMail = require('@sendgrid/mail');
             sgMail.setApiKey(sendgridApiKey);
-            const htmlContent = `<h2>Daily Digest for ${digest.user.first_name}</h2>
-              <p><strong>Due Follow-ups:</strong> ${digest.dueFollowUps.length}</p>
-              <p><strong>Dormant Accounts:</strong> ${digest.dormantAccounts.length}</p>
+            let htmlContent = `<h2>Daily Digest for ${digest.user.first_name}</h2>`;
+            if (digest.dueFollowUps.length > 0) {
+              htmlContent += `<h3>Due Today (${digest.dueFollowUps.length})</h3><ul>`;
+              digest.dueFollowUps.forEach(a => {
+                const note = a.follow_up_note ? ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}` : '';
+                htmlContent += `<li><strong>${a.shop_name}</strong>${note}</li>`;
+              });
+              htmlContent += '</ul>';
+            }
+            if (digest.upcomingFollowUps.length > 0) {
+              htmlContent += `<h3>Upcoming This Week (${digest.upcomingFollowUps.length})</h3><ul>`;
+              digest.upcomingFollowUps.forEach(a => {
+                const note = a.follow_up_note ? ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}` : '';
+                htmlContent += `<li><strong>${a.shop_name}</strong> (${a.follow_up_date})${note}</li>`;
+              });
+              htmlContent += '</ul>';
+            }
+            htmlContent += `<p><strong>Dormant Accounts:</strong> ${digest.dormantAccounts.length}</p>
               <p><strong>New Notes from Team:</strong> ${digest.newNotes.length}</p>`;
 
             await sgMail.send({
@@ -713,6 +867,12 @@ async function startServer() {
         }
       }
 
+      // Send manager summary after individual digests
+      if (!user_id) {
+        try { await sendManagerSummary(); results.push({ manager_summary: 'sent', to: MANAGER_EMAILS }); }
+        catch (e) { results.push({ manager_summary: 'failed', error: e.message }); }
+      }
+
       res.json({ message: 'Digest sent', results });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -724,7 +884,8 @@ async function startServer() {
 
       res.json({
         preview: {
-          dueFollowUps: digest.dueFollowUps.map(a => ({ id: a.id, shop_name: a.shop_name, follow_up_date: a.follow_up_date })),
+          dueFollowUps: digest.dueFollowUps.map(a => ({ id: a.id, shop_name: a.shop_name, follow_up_date: a.follow_up_date, note: a.follow_up_note })),
+          upcomingFollowUps: digest.upcomingFollowUps.map(a => ({ id: a.id, shop_name: a.shop_name, follow_up_date: a.follow_up_date, note: a.follow_up_note })),
           dormantAccounts: digest.dormantAccounts.map(a => ({ id: a.id, shop_name: a.shop_name, last_contacted_at: a.last_contacted_at })),
           newNotes: digest.newNotes.map(n => ({ id: n.id, shop_name: n.shop_name, author: `${n.first_name} ${n.last_name}`, created_at: n.created_at, content: n.content.substring(0, 100) }))
         }
@@ -837,7 +998,26 @@ async function startServer() {
         const sendgridApiKey = process.env.SENDGRID_API_KEY;
         const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
 
-        const digestText = `Daily Digest for ${userData.first_name}\n\nDue Follow-ups: ${digest.dueFollowUps.length}\nDormant Accounts: ${digest.dormantAccounts.length}\nNew Notes: ${digest.newNotes.length}`;
+        let digestText = `Daily Digest for ${userData.first_name}\n\n`;
+        if (digest.dueFollowUps.length > 0) {
+          digestText += `DUE TODAY (${digest.dueFollowUps.length}):\n`;
+          digest.dueFollowUps.forEach(a => {
+            digestText += `- ${a.shop_name}`;
+            if (a.follow_up_note) digestText += ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}`;
+            digestText += '\n';
+          });
+          digestText += '\n';
+        }
+        if (digest.upcomingFollowUps.length > 0) {
+          digestText += `UPCOMING THIS WEEK (${digest.upcomingFollowUps.length}):\n`;
+          digest.upcomingFollowUps.forEach(a => {
+            digestText += `- ${a.shop_name} (${a.follow_up_date})`;
+            if (a.follow_up_note) digestText += ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}`;
+            digestText += '\n';
+          });
+          digestText += '\n';
+        }
+        digestText += `Dormant Accounts: ${digest.dormantAccounts.length}\nNew Notes: ${digest.newNotes.length}`;
 
         // Send SMS
         if (userData.sms_enabled && userData.phone && twilioAccountSid && twilioAuthToken && twilioPhoneNumber) {
@@ -859,9 +1039,24 @@ async function startServer() {
           try {
             const sgMail = require('@sendgrid/mail');
             sgMail.setApiKey(sendgridApiKey);
-            const htmlContent = `<h2>Daily Digest for ${userData.first_name}</h2>
-              <p><strong>Due Follow-ups:</strong> ${digest.dueFollowUps.length}</p>
-              <p><strong>Dormant Accounts:</strong> ${digest.dormantAccounts.length}</p>
+            let htmlContent = `<h2>Daily Digest for ${userData.first_name}</h2>`;
+            if (digest.dueFollowUps.length > 0) {
+              htmlContent += `<h3>Due Today (${digest.dueFollowUps.length})</h3><ul>`;
+              digest.dueFollowUps.forEach(a => {
+                const note = a.follow_up_note ? ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}` : '';
+                htmlContent += `<li><strong>${a.shop_name}</strong>${note}</li>`;
+              });
+              htmlContent += '</ul>';
+            }
+            if (digest.upcomingFollowUps.length > 0) {
+              htmlContent += `<h3>Upcoming This Week (${digest.upcomingFollowUps.length})</h3><ul>`;
+              digest.upcomingFollowUps.forEach(a => {
+                const note = a.follow_up_note ? ` — ${a.follow_up_note.replace(/^\[Follow-up[^\]]*\]\s*/, '')}` : '';
+                htmlContent += `<li><strong>${a.shop_name}</strong> (${a.follow_up_date})${note}</li>`;
+              });
+              htmlContent += '</ul>';
+            }
+            htmlContent += `<p><strong>Dormant Accounts:</strong> ${digest.dormantAccounts.length}</p>
               <p><strong>New Notes from Team:</strong> ${digest.newNotes.length}</p>`;
 
             await sgMail.send({
@@ -875,6 +1070,9 @@ async function startServer() {
           }
         }
       }
+      // Send combined manager summary
+      try { await sendManagerSummary(); } catch (e) { console.warn('Manager summary cron error:', e.message); }
+
       console.log(`Digest cron completed for ${users.length} users`);
     } catch (e) {
       console.error('Digest cron error:', e.message);
