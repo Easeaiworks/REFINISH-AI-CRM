@@ -1,9 +1,16 @@
-import { useState, useRef } from 'react';
-import { Account } from '../../types';
+import { useState, useRef, useEffect } from 'react';
+import { Account, User } from '../../types';
 import { api } from '../../services/api';
+
+interface RepOption {
+  id: number;
+  first_name: string;
+  last_name: string;
+}
 
 interface Props {
   account: Account;
+  user: User;
   onSave: () => void;
 }
 
@@ -45,11 +52,22 @@ function parseBusinessTypes(val: string[] | string | null): string[] {
   try { return JSON.parse(val); } catch { return []; }
 }
 
-export default function ShopDetails({ account, onSave }: Props) {
+export default function ShopDetails({ account, user, onSave }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [reps, setReps] = useState<RepOption[]>([]);
+  const isManager = user.role === 'admin' || user.role === 'manager';
+
+  // Load reps list for managers
+  useEffect(() => {
+    if (isManager) {
+      api.get('/auth/users').then((data: any) => {
+        if (data.users) setReps(data.users.filter((u: any) => u.is_active));
+      }).catch(() => {});
+    }
+  }, [isManager]);
 
   // Edit state
   const [form, setForm] = useState({
@@ -69,6 +87,8 @@ export default function ShopDetails({ account, onSave }: Props) {
     business_types: parseBusinessTypes(account.business_types),
     business_type_notes: account.business_type_notes || '',
     contract_expiration_date: account.contract_expiration_date || '',
+    assigned_rep_id: account.assigned_rep_id?.toString() || '',
+    secondary_rep_id: account.secondary_rep_id?.toString() || '',
   });
 
   const startEditing = () => {
@@ -89,6 +109,8 @@ export default function ShopDetails({ account, onSave }: Props) {
       business_types: parseBusinessTypes(account.business_types),
       business_type_notes: account.business_type_notes || '',
       contract_expiration_date: account.contract_expiration_date || '',
+      assigned_rep_id: account.assigned_rep_id?.toString() || '',
+      secondary_rep_id: account.secondary_rep_id?.toString() || '',
     });
     setEditing(true);
   };
@@ -113,6 +135,10 @@ export default function ShopDetails({ account, onSave }: Props) {
         business_types: form.business_types,
         business_type_notes: form.business_type_notes || null,
         contract_expiration_date: form.contract_expiration_date || null,
+        ...(isManager ? {
+          assigned_rep_id: form.assigned_rep_id ? parseInt(form.assigned_rep_id) : null,
+          secondary_rep_id: form.secondary_rep_id ? parseInt(form.secondary_rep_id) : null,
+        } : {}),
       });
       setEditing(false);
       onSave();
@@ -162,6 +188,7 @@ export default function ShopDetails({ account, onSave }: Props) {
     ? new Date(account.last_contacted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : 'Never';
   const repDisplay = account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : null;
+  const secondaryRepDisplay = account.secondary_rep_first_name ? `${account.secondary_rep_first_name} ${account.secondary_rep_last_name}` : null;
 
   // ─── READ-ONLY VIEW ───
   if (!editing) {
@@ -201,7 +228,8 @@ export default function ShopDetails({ account, onSave }: Props) {
                 {CONTRACT_STATUS_LABELS[contractStatus] || 'None'}
               </div>
             </div>
-            {repDisplay && <StatBox label="Assigned Rep" value={repDisplay} />}
+            {repDisplay && <StatBox label="Primary Rep" value={repDisplay} />}
+            {secondaryRepDisplay && <StatBox label="Secondary Rep" value={secondaryRepDisplay} />}
             {account.follow_up_date && (
               <StatBox label="Follow-Up" value={new Date(account.follow_up_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} />
             )}
@@ -304,6 +332,38 @@ export default function ShopDetails({ account, onSave }: Props) {
           <FieldSelect label="Banner" value={form.banner} onChange={v => setForm(f => ({ ...f, banner: v }))} options={BANNER_OPTIONS} />
           <FieldSelect label="Contract Status" value={form.contract_status} onChange={v => setForm(f => ({ ...f, contract_status: v }))} options={CONTRACT_STATUS_OPTIONS} labels={CONTRACT_STATUS_LABELS} />
         </div>
+
+        {/* Rep Assignment — managers/admins only */}
+        {isManager && reps.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-navy-100">
+            <div>
+              <label className="block text-xs text-navy-500 mb-1 font-semibold">Primary Rep</label>
+              <select
+                value={form.assigned_rep_id}
+                onChange={e => setForm(f => ({ ...f, assigned_rep_id: e.target.value }))}
+                className="input-field w-full"
+              >
+                <option value="">— Unassigned —</option>
+                {reps.map(r => (
+                  <option key={r.id} value={r.id.toString()}>{r.first_name} {r.last_name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-navy-500 mb-1 font-semibold">Secondary Rep</label>
+              <select
+                value={form.secondary_rep_id}
+                onChange={e => setForm(f => ({ ...f, secondary_rep_id: e.target.value }))}
+                className="input-field w-full"
+              >
+                <option value="">— None —</option>
+                {reps.filter(r => r.id.toString() !== form.assigned_rep_id).map(r => (
+                  <option key={r.id} value={r.id.toString()}>{r.first_name} {r.last_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
         {/* Row 3: Text fields */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

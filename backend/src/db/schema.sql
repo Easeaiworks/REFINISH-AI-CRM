@@ -258,5 +258,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 
+DO $$ BEGIN
+  ALTER TABLE accounts ADD COLUMN secondary_rep_id INTEGER REFERENCES users(id);
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_accounts_category ON accounts(account_category);
 CREATE INDEX IF NOT EXISTS idx_accounts_branch ON accounts(branch);
+CREATE INDEX IF NOT EXISTS idx_accounts_secondary_rep ON accounts(secondary_rep_id);

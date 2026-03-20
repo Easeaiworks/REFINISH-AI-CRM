@@ -284,7 +284,7 @@ export default function AccountDetailPage({ user }: Props) {
 
       {/* Shop Details — full width */}
       <div className="mb-4 sm:mb-6">
-        <ShopDetails account={account} onSave={loadAccount} />
+        <ShopDetails account={account} user={user} onSave={loadAccount} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-1 gap-4 sm:gap-6">

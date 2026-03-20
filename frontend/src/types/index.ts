@@ -22,8 +22,11 @@ export interface Account {
   account_category: 'lead' | 'customer';
   branch: string | null;
   assigned_rep_id: number | null;
+  secondary_rep_id: number | null;
   rep_first_name?: string;
   rep_last_name?: string;
+  secondary_rep_first_name?: string;
+  secondary_rep_last_name?: string;
   status: 'prospect' | 'active' | 'cold' | 'dnc' | 'churned';
   suppliers: string | null;
   paint_line: string | null;
