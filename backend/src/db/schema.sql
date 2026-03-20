@@ -67,12 +67,12 @@ CREATE TABLE IF NOT EXISTS activities (
 );
 
 -- Widen activity_type constraint to support new tags
-DO $ BEGIN
-  ALTER TABLE activities DROP CONSTRAINT IF EXISTS activities_activity_type_check;
+ALTER TABLE activities DROP CONSTRAINT IF EXISTS activities_activity_type_check;
+DO $$ BEGIN
   ALTER TABLE activities ADD CONSTRAINT activities_activity_type_check
     CHECK(activity_type IN ('call','email','text','meeting','visit','sales_call','drop_in','contract_presentation','proposal','product_demo','vendor_partner_visit','other'));
-EXCEPTION WHEN others THEN NULL;
-END $;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS sales_data (
   id SERIAL PRIMARY KEY,
