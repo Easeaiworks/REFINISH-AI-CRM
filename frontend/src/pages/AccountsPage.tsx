@@ -344,9 +344,12 @@ export default function AccountsPage({ user }: Props) {
                     )}
                   </div>
                 )}
-                {account.rep_first_name && (
-                  <div className="text-xs text-navy-400 mt-1.5 text-right">Rep: {account.rep_first_name}</div>
-                )}
+                <div className="text-xs mt-1.5 text-right">
+                  {account.rep_first_name
+                    ? <span className="text-navy-500 font-medium">Rep: {account.rep_first_name} {account.rep_last_name}</span>
+                    : <span className="text-navy-300">Unassigned</span>
+                  }
+                </div>
               </div>
             ))}
           </div>
@@ -362,10 +365,8 @@ export default function AccountsPage({ user }: Props) {
                     <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Branch</th>
                   )}
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Contact</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Paint Line</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">
-                    {category === 'lead' ? 'Rep' : 'Phone'}
-                  </th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Rep</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase hidden lg:table-cell">Paint Line</th>
                   {category === 'lead' && (
                     <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Status</th>
                   )}
@@ -385,13 +386,10 @@ export default function AccountsPage({ user }: Props) {
                       <td className="py-3 px-4 text-sm text-navy-500">{account.branch || '-'}</td>
                     )}
                     <td className="py-3 px-4 text-sm text-navy-600">{account.contact_names || '-'}</td>
-                    <td className="py-3 px-4 text-sm text-navy-500">{account.paint_line || '-'}</td>
                     <td className="py-3 px-4 text-sm text-navy-600">
-                      {category === 'lead'
-                        ? (account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : '-')
-                        : (account.phone || '-')
-                      }
+                      {account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : <span className="text-navy-300">Unassigned</span>}
                     </td>
+                    <td className="py-3 px-4 text-sm text-navy-500 hidden lg:table-cell">{account.paint_line || '-'}</td>
                     {category === 'lead' && (
                       <td className="py-3 px-4">
                         <span className={`badge ${STATUS_COLORS[account.status]}`}>
