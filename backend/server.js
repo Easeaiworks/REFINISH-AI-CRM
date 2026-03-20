@@ -1421,16 +1421,42 @@ async function startServer() {
         return { userId: u.id, name: `${u.first_name} ${u.last_name}`, patterns: [first, last, full, lastFirst] };
       });
 
-      // 3. Get accounts with no assigned rep, along with the most common salesperson from their sales data
+      // 3. Build salesperson lookup from customer-seed.json (most reliable source)
+      let seedData = [];
+      try { seedData = require('./src/customer-seed.json'); } catch (e) { /* no seed file */ }
+      const shopSalesperson = {};
+      for (const rec of seedData) {
+        if (rec.shop_name && rec.salesperson) {
+          shopSalesperson[rec.shop_name.toLowerCase().trim()] = rec.salesperson.trim();
+        }
+      }
+
+      // 4. Also build lookup from sales_data (customer_name -> salesperson) as fallback
+      const salesLookup = await queryAll(`
+        SELECT customer_name, salesperson, COUNT(*) as cnt
+        FROM sales_data
+        WHERE salesperson IS NOT NULL AND salesperson != '' AND customer_name IS NOT NULL
+        GROUP BY customer_name, salesperson
+        ORDER BY customer_name, cnt DESC
+      `);
+      const salesSalesperson = {};
+      for (const row of salesLookup) {
+        const key = row.customer_name.toLowerCase().trim();
+        if (!salesSalesperson[key]) salesSalesperson[key] = row.salesperson.trim();
+      }
+
+      // 5. Get all unassigned accounts
       const unassigned = await queryAll(`
-        SELECT a.id, a.shop_name, a.account_category,
-          (SELECT sd.salesperson FROM sales_data sd
-           WHERE sd.account_id = a.id AND sd.salesperson IS NOT NULL AND sd.salesperson != ''
-           GROUP BY sd.salesperson ORDER BY COUNT(*) DESC LIMIT 1
-          ) as top_salesperson
+        SELECT a.id, a.shop_name, a.account_category
         FROM accounts a
         WHERE a.assigned_rep_id IS NULL AND a.deleted_at IS NULL
       `);
+
+      // 6. For each account, find salesperson from seed data or sales data
+      for (const acct of unassigned) {
+        const key = acct.shop_name.toLowerCase().trim();
+        acct.top_salesperson = shopSalesperson[key] || salesSalesperson[key] || null;
+      }
 
       let assigned = 0, skipped = 0;
       const assignments = [];
