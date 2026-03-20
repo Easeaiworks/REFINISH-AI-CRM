@@ -62,6 +62,7 @@ export default function DailyDigest({ user, alwaysShow = false }: Props) {
   const [viewMode, setViewMode] = useState<'my' | 'team'>('my');
 
   const isManager = user.role === 'admin' || user.role === 'manager';
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     loadDigest();
@@ -112,6 +113,45 @@ export default function DailyDigest({ user, alwaysShow = false }: Props) {
   const totalItems = digest.dueFollowUps.length + digest.upcomingFollowUps.length;
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
+  const handleExport = async (action: 'print' | 'email') => {
+    setExporting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const resp = await fetch('/api/notifications/export-report', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!resp.ok) throw new Error('Export failed');
+      const html = await resp.text();
+
+      if (action === 'print') {
+        const win = window.open('', '_blank');
+        if (win) {
+          win.document.write(html);
+          win.document.close();
+          setTimeout(() => win.print(), 500);
+        }
+      } else {
+        // Copy HTML to clipboard for email paste, or open mailto with summary
+        const blob = new Blob([html], { type: 'text/html' });
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'text/html': blob })
+          ]);
+          alert('Report copied to clipboard — paste it into your email.');
+        } catch {
+          // Fallback: open in new tab
+          const win = window.open('', '_blank');
+          if (win) { win.document.write(html); win.document.close(); }
+          alert('Report opened in new tab — use Ctrl/Cmd+A to select all, then paste into email.');
+        }
+      }
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Team totals for manager view
   const teamTotals = teamDigest ? {
     due: teamDigest.reduce((s, r) => s + r.dueFollowUps.length, 0),
@@ -148,6 +188,30 @@ export default function DailyDigest({ user, alwaysShow = false }: Props) {
                 className={`px-2.5 py-1 rounded-md transition-colors ${viewMode === 'team' ? 'bg-white text-navy-900 shadow-sm font-medium' : 'text-navy-500'}`}
               >
                 Team
+              </button>
+            </div>
+          )}
+          {isManager && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleExport('print')}
+                disabled={exporting}
+                className="text-navy-400 hover:text-brand-600 p-1.5 rounded transition-colors"
+                title="Print report"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => handleExport('email')}
+                disabled={exporting}
+                className="text-navy-400 hover:text-brand-600 p-1.5 rounded transition-colors"
+                title="Copy report for email"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
               </button>
             </div>
           )}

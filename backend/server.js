@@ -291,7 +291,11 @@ async function startServer() {
       const account = await queryOne('SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.id=$1 AND a.deleted_at IS NULL', [req.params.id]);
       if (!account) return res.status(404).json({ error: 'Not found' });
       const notes = await queryAll('SELECT n.*, u.first_name, u.last_name FROM notes n JOIN users u ON n.created_by_id=u.id WHERE n.account_id=$1 ORDER BY n.created_at DESC', [req.params.id]);
-      const activities = await queryAll('SELECT act.*, u.first_name, u.last_name FROM activities act JOIN users u ON act.rep_id=u.id WHERE act.account_id=$1 ORDER BY act.created_at DESC LIMIT 20', [req.params.id]);
+      // Reps see only their own activities; managers/admins see all
+      const isRep = req.user.role === 'rep';
+      const activities = isRep
+        ? await queryAll('SELECT act.*, u.first_name, u.last_name FROM activities act JOIN users u ON act.rep_id=u.id WHERE act.account_id=$1 AND act.rep_id=$2 ORDER BY act.created_at DESC LIMIT 20', [req.params.id, req.user.userId])
+        : await queryAll('SELECT act.*, u.first_name, u.last_name FROM activities act JOIN users u ON act.rep_id=u.id WHERE act.account_id=$1 ORDER BY act.created_at DESC LIMIT 20', [req.params.id]);
       res.json({ account, notes, activities });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -948,6 +952,78 @@ async function startServer() {
         }
       }
       res.json({ teamDigest });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Export team report as printable HTML (managers/admins)
+  app.get('/api/notifications/export-report', authenticate, async (req, res) => {
+    try {
+      const currentUser = await queryOne('SELECT role, first_name, last_name FROM users WHERE id=$1', [req.user.userId]);
+      if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'manager')) {
+        return res.status(403).json({ error: 'Manager or admin access required' });
+      }
+      const reps = await queryAll("SELECT id, first_name, last_name FROM users WHERE is_active = true ORDER BY first_name");
+      const teamDigest = [];
+      for (const rep of reps) {
+        const digest = await generateDigestForUser(rep.id);
+        if (digest) {
+          teamDigest.push({
+            rep: { first_name: rep.first_name, last_name: rep.last_name },
+            dueFollowUps: digest.dueFollowUps.map(a => ({ shop_name: a.shop_name, follow_up_date: a.follow_up_date, note: a.follow_up_note, city: a.city })),
+            upcomingFollowUps: digest.upcomingFollowUps.map(a => ({ shop_name: a.shop_name, follow_up_date: a.follow_up_date, note: a.follow_up_note, city: a.city })),
+            dormantCount: digest.dormantAccounts.length,
+            dormantAccounts: digest.dormantAccounts.slice(0, 10).map(a => ({ shop_name: a.shop_name, last_contacted_at: a.last_contacted_at }))
+          });
+        }
+      }
+      const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+      const totalDue = teamDigest.reduce((s, r) => s + r.dueFollowUps.length, 0);
+      const totalUpcoming = teamDigest.reduce((s, r) => s + r.upcomingFollowUps.length, 0);
+      const totalDormant = teamDigest.reduce((s, r) => s + r.dormantCount, 0);
+      let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>CHC CRM Team Report — ${today}</title>
+      <style>
+        *{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a2a3a;padding:24px;max-width:900px;margin:0 auto;font-size:13px}
+        h1{font-size:20px;margin-bottom:4px}h2{font-size:15px;margin:18px 0 8px;padding-bottom:4px;border-bottom:2px solid #dc2626}h3{font-size:13px;margin:10px 0 4px;color:#486581}
+        .subtitle{color:#627d98;font-size:12px;margin-bottom:16px}.stats{display:flex;gap:12px;margin:12px 0}.stat{background:#f8f9fa;border-radius:8px;padding:10px 16px;text-align:center;flex:1;border:1px solid #e2e8f0}
+        .stat-num{font-size:22px;font-weight:700}.stat-num.red{color:#dc2626}.stat-num.blue{color:#2563eb}.stat-num.amber{color:#d97706}.stat-label{font-size:10px;text-transform:uppercase;color:#627d98;letter-spacing:0.5px}
+        .rep-section{margin:14px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.rep-header{background:#f0f4f8;padding:8px 12px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+        .rep-badges span{font-size:11px;margin-left:8px}.due{color:#dc2626}.upcoming{color:#2563eb}.dormant{color:#d97706}
+        table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;padding:4px 8px;background:#f8f9fa;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;color:#627d98}
+        td{padding:5px 8px;border-bottom:1px solid #f0f4f8}.overdue{color:#dc2626;font-weight:600}
+        .footer{margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;color:#829ab1;font-size:11px;text-align:center}
+        @media print{body{padding:12px}@page{margin:0.5in}}
+      </style></head><body>`;
+      html += `<h1>CHC Paint & Auto Body — Team Report</h1><div class="subtitle">${today} &middot; Generated by ${currentUser.first_name} ${currentUser.last_name}</div>`;
+      html += `<div class="stats"><div class="stat"><div class="stat-num red">${totalDue}</div><div class="stat-label">Due Today</div></div><div class="stat"><div class="stat-num blue">${totalUpcoming}</div><div class="stat-label">This Week</div></div><div class="stat"><div class="stat-num amber">${totalDormant}</div><div class="stat-label">Dormant</div></div></div>`;
+      for (const rd of teamDigest) {
+        html += `<div class="rep-section"><div class="rep-header"><span>${rd.rep.first_name} ${rd.rep.last_name}</span><div class="rep-badges">`;
+        if (rd.dueFollowUps.length) html += `<span class="due">${rd.dueFollowUps.length} due</span>`;
+        if (rd.upcomingFollowUps.length) html += `<span class="upcoming">${rd.upcomingFollowUps.length} upcoming</span>`;
+        if (rd.dormantCount) html += `<span class="dormant">${rd.dormantCount} dormant</span>`;
+        html += `</div></div>`;
+        const allFollowUps = [...rd.dueFollowUps.map(f => ({...f, type: 'due'})), ...rd.upcomingFollowUps.map(f => ({...f, type: 'upcoming'}))];
+        if (allFollowUps.length > 0) {
+          html += `<table><thead><tr><th>Shop</th><th>Date</th><th>Notes</th></tr></thead><tbody>`;
+          for (const f of allFollowUps) {
+            const note = f.note ? f.note.replace(/^\[Follow-up[^\]]*\]\s*/, '') : '';
+            const dateStr = new Date(f.follow_up_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            html += `<tr><td><strong>${f.shop_name}</strong></td><td class="${f.type === 'due' ? 'overdue' : ''}">${f.type === 'due' ? 'TODAY' : dateStr}</td><td>${note}</td></tr>`;
+          }
+          html += `</tbody></table>`;
+        }
+        if (rd.dormantAccounts.length > 0) {
+          html += `<div style="padding:6px 8px"><h3>Dormant Accounts</h3><div style="font-size:11px;color:#627d98">`;
+          html += rd.dormantAccounts.map(a => a.shop_name + (a.last_contacted_at ? ` (last: ${new Date(a.last_contacted_at).toLocaleDateString()})` : ' (never contacted)')).join(', ');
+          html += `</div></div>`;
+        }
+        if (allFollowUps.length === 0 && rd.dormantCount === 0) {
+          html += `<div style="padding:8px 12px;color:#829ab1;font-size:12px">No follow-ups or alerts</div>`;
+        }
+        html += `</div>`;
+      }
+      html += `<div class="footer">CHC CRM — Confidential &middot; Generated ${new Date().toLocaleString()}</div></body></html>`;
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
