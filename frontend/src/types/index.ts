@@ -51,6 +51,7 @@ export interface Account {
   business_types: string[] | string | null;
   business_type_notes: string | null;
   contract_file_path: string | null;
+  contract_expiration_date: string | null;
   created_at: string;
   updated_at: string;
 }

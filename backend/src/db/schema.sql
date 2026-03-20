@@ -253,6 +253,10 @@ DO $$ BEGIN
   ALTER TABLE accounts ADD COLUMN contract_file_path TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
+DO $$ BEGIN
+  ALTER TABLE accounts ADD COLUMN contract_expiration_date DATE;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_accounts_category ON accounts(account_category);
 CREATE INDEX IF NOT EXISTS idx_accounts_branch ON accounts(branch);

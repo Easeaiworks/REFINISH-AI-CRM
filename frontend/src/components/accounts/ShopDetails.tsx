@@ -68,6 +68,7 @@ export default function ShopDetails({ account, onSave }: Props) {
     banner: account.banner || '',
     business_types: parseBusinessTypes(account.business_types),
     business_type_notes: account.business_type_notes || '',
+    contract_expiration_date: account.contract_expiration_date || '',
   });
 
   const startEditing = () => {
@@ -87,6 +88,7 @@ export default function ShopDetails({ account, onSave }: Props) {
       banner: account.banner || '',
       business_types: parseBusinessTypes(account.business_types),
       business_type_notes: account.business_type_notes || '',
+      contract_expiration_date: account.contract_expiration_date || '',
     });
     setEditing(true);
   };
@@ -110,6 +112,7 @@ export default function ShopDetails({ account, onSave }: Props) {
         banner: form.banner || null,
         business_types: form.business_types,
         business_type_notes: form.business_type_notes || null,
+        contract_expiration_date: form.contract_expiration_date || null,
       });
       setEditing(false);
       onSave();
@@ -214,18 +217,41 @@ export default function ShopDetails({ account, onSave }: Props) {
             </div>
           )}
 
-          {/* Contract File */}
-          {account.contract_file_path && (
+          {/* Contract File & Expiration */}
+          {(account.contract_file_path || account.contract_expiration_date) && (
             <div className="pt-2 border-t border-navy-50">
-              <div className="text-xs text-navy-400 mb-1">CHC Contract</div>
-              <a
-                href={account.contract_file_path}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 font-medium"
-              >
-                📄 View Contract
-              </a>
+              <div className="text-xs text-navy-400 mb-2">CHC Contract</div>
+              <div className="flex flex-wrap items-center gap-4">
+                {account.contract_file_path && (
+                  <a
+                    href={account.contract_file_path}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 font-medium"
+                  >
+                    📄 View Contract
+                  </a>
+                )}
+                {account.contract_expiration_date && (() => {
+                  const exp = new Date(account.contract_expiration_date + 'T00:00:00');
+                  const now = new Date();
+                  const daysUntil = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                  const isExpired = daysUntil < 0;
+                  const isExpiringSoon = daysUntil >= 0 && daysUntil <= 30;
+                  return (
+                    <div className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1 rounded-lg ${
+                      isExpired ? 'bg-red-50 text-red-700 border border-red-200' :
+                      isExpiringSoon ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                      'bg-green-50 text-green-700 border border-green-200'
+                    }`}>
+                      {isExpired ? '⚠️' : isExpiringSoon ? '⏰' : '✓'}
+                      <span>Expires {exp.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      {isExpired && <span className="text-xs">(expired)</span>}
+                      {isExpiringSoon && !isExpired && <span className="text-xs">({daysUntil} days)</span>}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           )}
         </div>
@@ -314,23 +340,34 @@ export default function ShopDetails({ account, onSave }: Props) {
           )}
         </div>
 
-        {/* Contract Upload */}
-        <div>
-          <label className="block text-xs text-navy-500 mb-1">CHC Contract File</label>
-          <div className="flex items-center gap-3">
+        {/* Contract Upload & Expiration Date */}
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-navy-500 mb-1 font-semibold">Contract Expiration Date</label>
             <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-              onChange={handleFileUpload}
-              className="text-sm text-navy-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
+              type="date"
+              value={form.contract_expiration_date}
+              onChange={e => setForm(f => ({ ...f, contract_expiration_date: e.target.value }))}
+              className="input-field w-full sm:w-auto"
             />
-            {uploading && <span className="text-xs text-navy-400">Uploading...</span>}
-            {account.contract_file_path && (
-              <a href={account.contract_file_path} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 hover:underline">
-                View current
-              </a>
-            )}
+          </div>
+          <div>
+            <label className="block text-xs text-navy-500 mb-1">CHC Contract File</label>
+            <div className="flex items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                onChange={handleFileUpload}
+                className="text-sm text-navy-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
+              />
+              {uploading && <span className="text-xs text-navy-400">Uploading...</span>}
+              {account.contract_file_path && (
+                <a href={account.contract_file_path} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 hover:underline">
+                  View current
+                </a>
+              )}
+            </div>
           </div>
         </div>
       </div>

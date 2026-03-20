@@ -324,7 +324,7 @@ async function startServer() {
     try {
       const existing = await queryOne('SELECT * FROM accounts WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!existing) return res.status(404).json({ error: 'Not found' });
-      const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags','account_category','branch','postal_code','phone2','num_painters','num_body_men','num_paint_booths','cup_brand','paper_brand','filler_brand','contract_status','deal_details','banner','business_types','business_type_notes','contract_file_path'];
+      const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags','account_category','branch','postal_code','phone2','num_painters','num_body_men','num_paint_booths','cup_brand','paper_brand','filler_brand','contract_status','deal_details','banner','business_types','business_type_notes','contract_file_path','contract_expiration_date'];
       const updates = ['updated_at = NOW()']; const params = []; const changes = {};
       let idx = 1;
       for (const f of fields) {
