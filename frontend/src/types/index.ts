@@ -38,6 +38,19 @@ export interface Account {
   follow_up_date: string | null;
   last_contacted_at: string | null;
   tags: string;
+  // Shop detail fields
+  num_painters: number | null;
+  num_body_men: number | null;
+  num_paint_booths: number | null;
+  cup_brand: string | null;
+  paper_brand: string | null;
+  filler_brand: string | null;
+  contract_status: string | null;
+  deal_details: string | null;
+  banner: string | null;
+  business_types: string[] | string | null;
+  business_type_notes: string | null;
+  contract_file_path: string | null;
   created_at: string;
   updated_at: string;
 }

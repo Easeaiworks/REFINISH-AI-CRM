@@ -266,6 +266,22 @@ export default function AccountsPage({ user }: Props) {
                     </div>
                   )}
                 </div>
+                {/* Shop detail highlights */}
+                {(account.paint_line || account.num_painters || account.banner || account.contract_status && account.contract_status !== 'none') && (
+                  <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-navy-50">
+                    {account.paint_line && <span className="text-[10px] bg-navy-50 text-navy-600 px-2 py-0.5 rounded-full">{account.paint_line}</span>}
+                    {account.banner && account.banner !== 'None' && <span className="text-[10px] bg-navy-50 text-navy-600 px-2 py-0.5 rounded-full">{account.banner}</span>}
+                    {account.num_painters != null && <span className="text-[10px] bg-navy-50 text-navy-600 px-2 py-0.5 rounded-full">{account.num_painters} painters</span>}
+                    {account.num_paint_booths != null && <span className="text-[10px] bg-navy-50 text-navy-600 px-2 py-0.5 rounded-full">{account.num_paint_booths} booths</span>}
+                    {account.contract_status && account.contract_status !== 'none' && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                        account.contract_status === 'active' ? 'bg-green-50 text-green-700' :
+                        account.contract_status === 'pending' ? 'bg-amber-50 text-amber-700' :
+                        'bg-red-50 text-red-700'
+                      }`}>Contract: {account.contract_status}</span>
+                    )}
+                  </div>
+                )}
                 {account.rep_first_name && (
                   <div className="text-xs text-navy-400 mt-1.5 text-right">Rep: {account.rep_first_name}</div>
                 )}
@@ -284,6 +300,7 @@ export default function AccountsPage({ user }: Props) {
                     <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Branch</th>
                   )}
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Contact</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Paint Line</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">
                     {category === 'lead' ? 'Rep' : 'Phone'}
                   </th>
@@ -306,6 +323,7 @@ export default function AccountsPage({ user }: Props) {
                       <td className="py-3 px-4 text-sm text-navy-500">{account.branch || '-'}</td>
                     )}
                     <td className="py-3 px-4 text-sm text-navy-600">{account.contact_names || '-'}</td>
+                    <td className="py-3 px-4 text-sm text-navy-500">{account.paint_line || '-'}</td>
                     <td className="py-3 px-4 text-sm text-navy-600">
                       {category === 'lead'
                         ? (account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : '-')

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { User, Account, Note, Activity, STATUS_LABELS, STATUS_COLORS, StatusType } from '../types';
 import { useVoiceInput } from '../hooks/useVoiceInput';
+import ShopDetails from '../components/accounts/ShopDetails';
 
 interface Props { user: User }
 
@@ -282,20 +283,18 @@ export default function AccountDetailPage({ user }: Props) {
             )}
           </div>
 
-          {/* Business Details */}
+          {/* Shop Details — full edit/save component */}
+          <ShopDetails account={account} onSave={loadAccount} />
+
+          {/* Other Business Details */}
           <div className="card">
-            <h3 className="font-bold text-navy-900 mb-4">Business Details</h3>
+            <h3 className="font-bold text-navy-900 mb-4">Account Info</h3>
             <div className="space-y-3 text-sm">
               <InfoRow label="Type" value={account.account_type} />
-              <InfoRow label="Suppliers" value={account.suppliers} />
-              <InfoRow label="Paint Line" value={account.paint_line} />
               <InfoRow label="Sundries" value={account.sundries} />
               <InfoRow label="Allied Products" value={account.allied_products} />
-              <InfoRow label="Contract" value={account.has_contract ? 'Yes' : 'No'} />
               <InfoRow label="MPO" value={account.mpo} />
               <InfoRow label="# Techs" value={account.num_techs?.toString()} />
-              <InfoRow label="Sq. Footage" value={account.sq_footage} />
-              <InfoRow label="Annual Revenue" value={account.annual_revenue ? `$${account.annual_revenue.toLocaleString()}` : null} />
               <InfoRow label="Former Sherwin" value={account.former_sherwin_client ? 'Yes' : 'No'} />
               <InfoRow label="Rep" value={account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : null} />
               <InfoRow label="Follow-Up" value={account.follow_up_date} />

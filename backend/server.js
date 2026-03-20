@@ -5,6 +5,8 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cron = require('node-cron');
@@ -322,13 +324,13 @@ async function startServer() {
     try {
       const existing = await queryOne('SELECT * FROM accounts WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!existing) return res.status(404).json({ error: 'Not found' });
-      const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags','account_category','branch','postal_code','phone2'];
+      const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags','account_category','branch','postal_code','phone2','num_painters','num_body_men','num_paint_booths','cup_brand','paper_brand','filler_brand','contract_status','deal_details','banner','business_types','business_type_notes','contract_file_path'];
       const updates = ['updated_at = NOW()']; const params = []; const changes = {};
       let idx = 1;
       for (const f of fields) {
         if (req.body[f] !== undefined) {
           let v = req.body[f];
-          if (f === 'tags' && Array.isArray(v)) v = JSON.stringify(v);
+          if ((f === 'tags' || f === 'business_types') && Array.isArray(v)) v = JSON.stringify(v);
           if (f === 'has_contract' || f === 'former_sherwin_client') v = v ? true : false;
           updates.push(`${f} = $${idx++}`); params.push(v); changes[f] = { from: existing[f], to: v };
         }
@@ -344,6 +346,39 @@ async function startServer() {
     await execute('UPDATE accounts SET deleted_at = NOW() WHERE id = $1', [req.params.id]);
     await logAudit(req, 'account', parseInt(req.params.id), 'delete', {});
     res.json({ message: 'Deleted' });
+  });
+
+  // ─── Contract file upload ───
+  const uploadsDir = path.join(__dirname, 'uploads', 'contracts');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  const contractUpload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => cb(null, uploadsDir),
+      filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    fileFilter: (req, file, cb) => {
+      const allowed = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg'];
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, allowed.includes(ext));
+    }
+  });
+
+  app.post('/api/accounts/:id/upload-contract', authenticate, contractUpload.single('contract'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded or invalid file type' });
+      const filePath = `/uploads/contracts/${req.file.filename}`;
+      await execute('UPDATE accounts SET contract_file_path = $1, updated_at = NOW() WHERE id = $2', [filePath, req.params.id]);
+      await logAudit(req, 'account', parseInt(req.params.id), 'update', { contract_file_path: { from: null, to: filePath } });
+      res.json({ file_path: filePath, filename: req.file.originalname });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Serve uploaded contract files
+  app.get('/uploads/contracts/:filename', authenticate, (req, res) => {
+    const filePath = path.join(uploadsDir, req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+    res.sendFile(filePath);
   });
 
   app.post('/api/accounts/import', authenticate, async (req, res) => {
