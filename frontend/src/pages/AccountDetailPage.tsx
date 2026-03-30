@@ -197,8 +197,14 @@ export default function AccountDetailPage({ user }: Props) {
             ) : (
               <span className={`badge ${STATUS_COLORS[account.status]}`}>{STATUS_LABELS[account.status]}</span>
             )}
-            {account.branch && <span className="text-sm text-brand-600 font-medium">{account.branch}</span>}
-            {account.city && <span className="text-sm text-navy-500">{account.city}{account.province ? `, ${account.province}` : ''}</span>}
+            {account.branch && (
+              <span className="inline-flex items-center gap-1 text-sm text-brand-600 font-medium bg-brand-50 px-2 py-0.5 rounded">
+                📍 {account.branch}
+              </span>
+            )}
+            {account.city && (!account.branch || !account.city.toLowerCase().includes(account.branch.toLowerCase())) && (
+              <span className="text-sm text-navy-500">{account.city}{account.province ? `, ${account.province}` : ''}</span>
+            )}
             {account.contact_names && <span className="text-sm text-navy-400">{account.contact_names}</span>}
           </div>
         </div>
@@ -301,6 +307,15 @@ export default function AccountDetailPage({ user }: Props) {
               <label className="block text-xs text-navy-500 mb-1">Status</label>
               <select className="input-field" value={editForm.status || 'prospect'} onChange={e => setEditForm(f => ({...f, status: e.target.value as StatusType}))}>
                 {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-navy-500 mb-1">Branch</label>
+              <select className="input-field" value={editForm.branch || ''} onChange={e => setEditForm(f => ({...f, branch: e.target.value}))}>
+                <option value="">— Unassigned —</option>
+                {['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Woodbridge'].map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
               </select>
             </div>
             <div className="sm:col-span-2 lg:col-span-3">
