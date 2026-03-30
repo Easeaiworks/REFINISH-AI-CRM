@@ -12,6 +12,12 @@ export interface PhoneEntry {
   is_primary: boolean;
 }
 
+export interface EmailEntry {
+  address: string;
+  type: 'Painter' | 'Admin' | 'Manager' | 'Owner' | '';
+  is_primary: boolean;
+}
+
 export interface Account {
   id: number;
   shop_name: string;
@@ -25,6 +31,7 @@ export interface Account {
   phone2: string | null;
   phone_numbers: string | PhoneEntry[] | null;
   email: string | null;
+  email_addresses: string | EmailEntry[] | null;
   account_type: string;
   account_category: 'lead' | 'customer';
   branch: string | null;

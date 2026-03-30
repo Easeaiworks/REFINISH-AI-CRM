@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import { User, Account, Note, Activity, PhoneEntry, STATUS_LABELS, STATUS_COLORS, StatusType } from '../types';
+import { User, Account, Note, Activity, PhoneEntry, EmailEntry, STATUS_LABELS, STATUS_COLORS, StatusType } from '../types';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import ShopDetails from '../components/accounts/ShopDetails';
 
@@ -17,6 +17,9 @@ export default function AccountDetailPage({ user }: Props) {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Account>>({});
   const [editPhones, setEditPhones] = useState<PhoneEntry[]>([]);
+  const [editEmails, setEditEmails] = useState<EmailEntry[]>([]);
+
+  const EMAIL_TYPES = ['', 'Painter', 'Admin', 'Manager', 'Owner'] as const;
 
   // Parse phone_numbers JSON from account
   const parsePhoneNumbers = (acc: Account): PhoneEntry[] => {
@@ -28,6 +31,19 @@ export default function AccountDetailPage({ user }: Props) {
       return acc.phone ? [{ number: acc.phone, label: 'Main', is_primary: true }] : [];
     } catch {
       return acc.phone ? [{ number: acc.phone, label: 'Main', is_primary: true }] : [];
+    }
+  };
+
+  // Parse email_addresses JSON from account
+  const parseEmailAddresses = (acc: Account): EmailEntry[] => {
+    try {
+      const raw = acc.email_addresses;
+      if (!raw) return acc.email ? [{ address: acc.email, type: '', is_primary: true }] : [];
+      const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+      return acc.email ? [{ address: acc.email, type: '', is_primary: true }] : [];
+    } catch {
+      return acc.email ? [{ address: acc.email, type: '', is_primary: true }] : [];
     }
   };
 
@@ -172,6 +188,7 @@ export default function AccountDetailPage({ user }: Props) {
       await api.put(`/accounts/${id}`, {
         ...editForm,
         phone_numbers: JSON.stringify(editPhones),
+        email_addresses: JSON.stringify(editEmails),
       });
       setEditing(false);
       loadAccount();
@@ -225,7 +242,7 @@ export default function AccountDetailPage({ user }: Props) {
             {account.contact_names && <span className="text-sm text-navy-400">{account.contact_names}</span>}
           </div>
         </div>
-        <button onClick={() => { if (!editing && account) setEditPhones(parsePhoneNumbers(account)); setEditing(!editing); }} className="btn-ghost text-sm self-start">
+        <button onClick={() => { if (!editing && account) { setEditPhones(parsePhoneNumbers(account)); setEditEmails(parseEmailAddresses(account)); } setEditing(!editing); }} className="btn-ghost text-sm self-start">
           {editing ? 'Cancel' : 'Edit'}
         </button>
       </div>
@@ -304,10 +321,6 @@ export default function AccountDetailPage({ user }: Props) {
               <div>
                 <label className="block text-xs text-navy-500 mb-1">Contact Names</label>
                 <input className="input-field" value={editForm.contact_names || ''} onChange={e => setEditForm(f => ({...f, contact_names: e.target.value}))} />
-              </div>
-              <div>
-                <label className="block text-xs text-navy-500 mb-1">Email</label>
-                <input className="input-field" type="email" value={editForm.email || ''} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} placeholder="e.g. joe@acmecollision.com" />
               </div>
               <div>
                 <label className="block text-xs text-navy-500 mb-1">Address</label>
@@ -396,22 +409,85 @@ export default function AccountDetailPage({ user }: Props) {
               )}
             </div>
 
+            {/* ─── Email Addresses ─── */}
+            <div className="border-t border-navy-100 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs text-navy-500 font-semibold uppercase">Email Addresses</label>
+                <button
+                  type="button"
+                  onClick={() => setEditEmails(prev => [...prev, { address: '', type: '', is_primary: prev.length === 0 }])}
+                  className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
+                >
+                  + Add Email
+                </button>
+              </div>
+              {editEmails.length === 0 && (
+                <p className="text-sm text-navy-400 italic">No email addresses. Click "Add Email" to add one.</p>
+              )}
+              <div className="space-y-2">
+                {editEmails.map((em, i) => (
+                  <div key={i} className={`flex items-center gap-2 p-2 rounded-lg border ${em.is_primary ? 'border-purple-300 bg-purple-50' : 'border-navy-100 bg-white'}`}>
+                    <label className="flex items-center gap-1.5 flex-shrink-0 cursor-pointer" title="Set as main email">
+                      <input
+                        type="checkbox"
+                        checked={em.is_primary}
+                        onChange={() => setEditEmails(prev => prev.map((e, j) => ({ ...e, is_primary: j === i })))}
+                        className="w-4 h-4 accent-purple-600"
+                      />
+                      <span className="text-[10px] text-navy-500 font-medium hidden sm:inline">Main</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={em.address}
+                      onChange={e => setEditEmails(prev => prev.map((em2, j) => j === i ? { ...em2, address: e.target.value } : em2))}
+                      className="input-field flex-1 min-w-0"
+                      placeholder="e.g. joe@acmecollision.com"
+                    />
+                    <select
+                      value={em.type}
+                      onChange={e => setEditEmails(prev => prev.map((em2, j) => j === i ? { ...em2, type: e.target.value as EmailEntry['type'] } : em2))}
+                      className="input-field w-28 sm:w-32"
+                    >
+                      <option value="">Type...</option>
+                      {EMAIL_TYPES.filter(t => t).map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = editEmails.filter((_, j) => j !== i);
+                        if (em.is_primary && updated.length > 0) updated[0].is_primary = true;
+                        setEditEmails(updated);
+                      }}
+                      className="text-red-400 hover:text-red-600 text-lg flex-shrink-0 px-1"
+                      title="Remove"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {editEmails.some(e => e.is_primary) && (
+                <p className="text-[10px] text-purple-600 mt-2">The checked email will be used for the Email button.</p>
+              )}
+            </div>
+
             <div>
               <button onClick={saveEdit} className="btn-primary w-full sm:w-auto">Save Changes</button>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-2 text-sm">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-sm">
               <InfoRow label="Contact(s)" value={account.contact_names} />
-              <InfoRow label="Email" value={account.email} href={hasEmail ? `mailto:${account.email}` : undefined} />
               <InfoRow label="Address" value={account.address} />
               <InfoRow label="City" value={account.city} />
             </div>
             {/* Phone numbers list */}
             {(() => {
               const phones = parsePhoneNumbers(account);
-              if (phones.length === 0) return <div className="text-sm text-navy-400">No phone numbers</div>;
+              if (phones.length === 0) return <div className="text-sm text-navy-400 border-t border-navy-100 pt-3 mt-3">No phone numbers</div>;
               return (
                 <div className="border-t border-navy-100 pt-3">
                   <div className="text-xs text-navy-500 font-semibold uppercase mb-2">Phone Numbers</div>
@@ -427,6 +503,25 @@ export default function AccountDetailPage({ user }: Props) {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Email addresses list */}
+            {(() => {
+              const emails = parseEmailAddresses(account);
+              if (emails.length === 0) return <div className="text-sm text-navy-400 border-t border-navy-100 pt-3">No email addresses</div>;
+              return (
+                <div className="border-t border-navy-100 pt-3">
+                  <div className="text-xs text-navy-500 font-semibold uppercase mb-2">Email Addresses</div>
+                  <div className="space-y-1.5">
+                    {emails.map((em, i) => (
+                      <div key={i} className={`flex items-center gap-2 text-sm ${em.is_primary ? 'font-medium text-navy-900' : 'text-navy-600'}`}>
+                        {em.is_primary && <span className="text-purple-600 text-xs font-bold bg-purple-50 px-1.5 py-0.5 rounded">Main</span>}
+                        <a href={`mailto:${em.address}`} className="hover:text-brand-600 underline decoration-dotted">{em.address}</a>
+                        {em.type && <span className="text-navy-400 text-xs bg-navy-50 px-1.5 py-0.5 rounded">{em.type}</span>}
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
